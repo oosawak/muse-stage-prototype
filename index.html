@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muse Stage</title>
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <!-- 舞台：VRM のミューズを大きく表示する -->
+  <div id="stage"></div>
+
+  <!-- 読み上げ中の字幕（プロジェクターで読める大きさ） -->
+  <div id="caption" class="caption"></div>
+
+  <!-- 操作系：発表の邪魔にならないよう、右下に小さく。マウスを動かしたときだけ濃く見える -->
+  <div id="panel" class="panel">
+    <textarea id="text" rows="3" placeholder="ミューズの返事を貼り付けて「読み上げ」">こんばんは、ミューズです。今日は大澤さんと一緒に発表します</textarea>
+    <div class="row">
+      <button id="btnSpeak" class="primary">読み上げ</button>
+      <button id="btnStop">止める</button>
+      <button id="btnFull" title="全画面（F キー）">全画面</button>
+      <select id="engine" title="読み上げのしくみ">
+        <option value="auto">自動</option>
+        <option value="web">WebView の speechSynthesis</option>
+        <option value="say">macOS の say</option>
+      </select>
+      <select id="voice" title="say の声"></select>
+      <label class="chk"><input type="checkbox" id="chkCaption" checked> 字幕</label>
+    </div>
+    <div class="row">
+      <button id="btnGrab" title="Muse.app の画面から、いちばん新しい返事を取り込む（アクセシビリティの許可が要る）">Muse から取り込む</button>
+      <label class="chk" title="Muse.app に新しい返事が出たら、自動で取り込んで読み上げる"><input type="checkbox" id="chkAuto"> 新しい返事を自動で読む</label>
+    </div>
+    <div id="status" class="status">準備中…</div>
+  </div>
+
+  <div id="loading" class="loading">ミューズを呼んでいます…</div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
