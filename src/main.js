@@ -284,17 +284,29 @@ function renderReplies(replies) {
     list.appendChild(b);
   });
 }
-/* ---------- ウェブ版フック：ブラウザから届いた返事を受ける ---------- */
+/* ---------- 外から届いた返事（ウェブフック／ミューズ直送）の共通の受け方 ---------- */
 let stageReplies = [];
-if (hookListen) hookListen('hooked-reply', e => {
-  const text = (e.payload?.text || '').trim();
+function acceptReply(text, source) {
+  text = (text || '').trim();
   if (!text) return;
   if (stageReplies[stageReplies.length - 1] !== text) { stageReplies = [...stageReplies, text]; renderReplies(stageReplies); }
   $('#text').value = text;
-  setStatus('ウェブから返事が届きました');
-  report('フックで返事を受信しました');
+  setStatus(source + 'で返事が届きました');
+  report(source + 'で返事を受信しました');
   if ($('#chkAuto').checked && !speaking) speak(text); // 「自動で読む」が入っていれば、そのまま読み上げる
-});
+}
+if (hookListen) hookListen('hooked-reply', e => acceptReply(e.payload?.text, 'ウェブフック'));
+
+/* ---------- ミューズ直送：配達ファイルの見張り ---------- */
+let lastInboxSeq = -1;
+if (inTauri) setInterval(async () => {
+  try {
+    const r = await invoke('read_inbox');
+    if (!r) return;
+    if (lastInboxSeq < 0) { lastInboxSeq = r[0]; return; } // 初回は基準だけ決めて、古い文は読まない
+    if (r[0] > lastInboxSeq) { lastInboxSeq = r[0]; acceptReply(r[1], 'ミューズ直送'); }
+  } catch { /* ファイルが無い間は静かに待つ */ }
+}, 700);
 
 async function grabMuse(manual = false) {
   if (!inTauri) throw new Error('アプリの中でだけ使えます');

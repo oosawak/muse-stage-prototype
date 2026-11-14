@@ -247,6 +247,19 @@ fn is_time_only(s: &str) -> bool {
   s.len() <= 5 && s.matches(':').count() == 1 && s.chars().all(|c| c.is_ascii_digit() || c == ':')
 }
 
+/// ミューズ直送：配達ファイル（~/muse-stage-inbox.json）を読む。
+/// 舞台用チャットのミューズが、返事のたびに {"seq": 番号, "text": "返事"} を書き込む。画面側が見張って取り込む
+#[tauri::command]
+fn read_inbox() -> Option<(u64, String)> {
+  let path = std::env::home_dir()?.join("muse-stage-inbox.json");
+  let data = std::fs::read_to_string(path).ok()?;
+  let v: serde_json::Value = serde_json::from_str(&data).ok()?;
+  let seq = v.get("seq")?.as_u64()?;
+  let text = v.get("text")?.as_str()?.trim().to_string();
+  if text.is_empty() { return None; }
+  Some((seq, text))
+}
+
 /// ウェブ版フックで届く返事（ブラウザ側スクリプト → この受け口 → 画面へのイベント）
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct HookReply { text: String, role: Option<String> }
@@ -321,7 +334,7 @@ pub fn run() {
   tauri::Builder::default()
     .manage(Speaker(Mutex::new(None)))
     .setup(|app| { start_hook_server(app.handle().clone()); Ok(()) })
-    .invoke_handler(tauri::generate_handler![speak_say, stop_say, ja_voices, report, selftest, read_muse])
+    .invoke_handler(tauri::generate_handler![speak_say, stop_say, ja_voices, report, selftest, read_muse, read_inbox])
     .run(tauri::generate_context!())
     .expect("muse-stage を起動できませんでした");
 }
