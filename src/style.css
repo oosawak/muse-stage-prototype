@@ -58,3 +58,8 @@ body.no-panel .panel, body.no-panel .replies { opacity: 0 !important; pointer-ev
 .loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 20px; color: var(--muted);
   background: var(--bg); transition: opacity .5s; }
 .loading.hide { opacity: 0; pointer-events: none; }
+
+/* 発表モード：背景を透明にし、返事の一覧は隠す（残るのはキャラクターとクレジットと字幕） */
+body.present { background: transparent; }
+body.present #stage { background: transparent; }
+body.present .replies { display: none; }

@@ -20,12 +20,15 @@
         "minHeight": 400,
         "resizable": true,
         "fullscreen": false,
-        "backgroundColor": "#0d0b14"
+        "backgroundColor": "#00000000",
+        "transparent": true,
+        "decorations": false
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

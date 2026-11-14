@@ -23,7 +23,8 @@ const prefs = { get(k, d) { try { const v = localStorage.getItem('muse-stage.' +
 const rateMul = () => Number($('#rate').value) || 1; // 1 が標準。say には 1 分あたりの語数（標準 175）に直して渡す（Kyoko は効きが小さいので 2 乗で強める）
 
 /* ---------- 3D の舞台 ---------- */
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setClearColor(0x000000, 0); // 発表モードでは背景を透明にする
 renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 $('#stage').appendChild(renderer.domElement);
@@ -89,7 +90,8 @@ async function loadVRM(url) {
 
 /* ---------- モーション（VRMA）と、うろうろする演出 ---------- */
 // モーション素材は CC0（Quaternius／KayKit を open-vrma が VRMA 化したもの）。出典は MOTIONS.md
-const MOTION_FILES = { idle: 'Idle_Loop', talk: 'Idle_Talking_Loop', walk: 'Walk_Loop', jog: 'Jog_Fwd_Loop', yes: 'Yes', dance: 'Dance_Loop', crouch: 'Crouch_Idle_Loop' };
+const MOTION_FILES = { idle: 'Idle_Loop', talk: 'Idle_Talking_Loop', walk: 'Walk_Loop', jog: 'Jog_Fwd_Loop', yes: 'Yes', no: 'Idle_No_Loop', dance: 'Dance_Loop', crouch: 'Crouch_Idle_Loop', sit: 'Sitting_Idle_Loop', jump: 'Jump_Loop', roll: 'Roll', punch: 'Punch_Jab', sword: 'Sword_Attack', spell: 'Spell_Simple_Shoot', hit: 'Hit_Chest', death: 'Death01' };
+const ONESHOT = new Set(['yes', 'no', 'jump', 'punch', 'sword', 'spell', 'hit', 'death']); // 1回だけ再生する動き
 let mixer = null; const actions = {}; let curAction = null, curMotion = '';
 async function setupMotions() {
   if (!vrm) return;
@@ -100,8 +102,8 @@ async function setupMotions() {
       const g = await loader.loadAsync('motions/' + file + '.vrma');
       const anim = g.userData.vrmAnimations?.[0]; if (!anim) continue;
       const a = mixer.clipAction(createVRMAnimationClip(anim, vrm));
-      a.setLoop(name === 'yes' ? THREE.LoopOnce : THREE.LoopRepeat);
-      if (name === 'yes') a.clampWhenFinished = true;
+      a.setLoop(ONESHOT.has(name) ? THREE.LoopOnce : THREE.LoopRepeat);
+      if (ONESHOT.has(name)) a.clampWhenFinished = true;
       actions[name] = a;
     } catch (e) { report('モーションを読めませんでした: ' + file); }
   }
@@ -116,7 +118,7 @@ function playMotion(name, fade = .3) {
 function stopMotion() { if (curAction) { curAction.fadeOut(.3); curAction = null; curMotion = ''; } }
 
 // 演出の状態遷移：idle →（歩く・走る・隠れる・踊る）→ idle を繰り返す
-const director = { mode: 'wander', state: 'idle', t: 2, target: null, pendingPeek: null, hideY: 0, yesPlease: false };
+const director = { mode: 'wander', state: 'idle', t: 2, target: null, pendingPeek: null, hideY: 0, yesPlease: false, gesture: '', jumps: 0 };
 try { director.mode = prefs.get('motion', 'wander'); } catch (e) {}
 function viewHalf() {
   const dist = camera.position.z;
@@ -139,23 +141,35 @@ function setMove(x, z, clip) {
   director.state = 'move';
   director.target = { x, z, clip, speed: clip === 'jog' ? 1.25 : .5 };
 }
+function startGesture(name) { director.state = 'gesture'; director.gesture = name; playMotion(name, .15); }
 function chooseNext() {
   const v = viewHalf(), cx = actor.position.x, cz = actor.position.z, r = Math.random();
-  if (r < .32) { // ちょこちょこ：近くの点へ歩く
+  if (r < .20) { // ちょこちょこ：近くの点へ歩く
     setMove(clamp(cx + rand(-1, 1) * .85, -v.halfW * .8, v.halfW * .8), clamp(cz + rand(-1, 1) * .5, -1.1, .5), 'walk');
-  } else if (r < .50) { // 奥へ走る／手前へ戻る
+  } else if (r < .31) { // 奥へ走る／手前へ戻る
     setMove(rand(-.6, .6), cz > -.5 ? -1.25 : rand(.1, .5), 'jog');
-  } else if (r < .66) { // 端に隠れて顔だけ出す
+  } else if (r < .43) { // 端に隠れて顔だけ出す
     const side = Math.random() < .5 ? -1 : 1;
     const z = clamp(cz, -.8, .4), h = halfAt(z);
     director.pendingPeek = 'side';
     setMove(side * (h.halfW + modelW * .5 - .13), z, 'walk');
-  } else if (r < .78) { // 下に隠れて顔だけ出す
+  } else if (r < .53) { // 下に隠れて顔だけ出す
     const h = halfAt(actor.position.z);
     director.hideY = (h.centerY - h.halfH) - modelH * .78;
     director.state = 'peekBottom'; director.t = rand(2.5, 4.5);
+  } else if (r < .63) { // おすわりして休む
+    director.state = 'sit'; director.t = rand(4, 8);
+  } else if (r < .71) { // ぴょんぴょん跳ねる（2回）
+    director.state = 'jump'; director.jumps = 2; playMotion('jump', .1);
+  } else if (r < .78) { // ころころ転がって移動する
+    const dur = actions.roll?.getClip().duration || 1;
+    const nx = clamp(cx + rand(-1, 1) * .9, -v.halfW * .7, v.halfW * .7);
+    director.state = 'move';
+    director.target = { x: nx, z: cz, clip: 'roll', speed: Math.abs(nx - cx) / dur || .6 };
   } else if (r < .86) { // たまに踊る
     director.state = 'dance'; director.t = rand(4, 7);
+  } else if (r < .89) { // たまに首を振る（いやいや）
+    startGesture('no');
   } else toIdle(rand(2.5, 5));
 }
 function directorUpdate(dt) {
@@ -165,13 +179,25 @@ function directorUpdate(dt) {
   director.t -= dt;
   switch (director.state) {
     case 'idle':
-      if (director.yesPlease && actions.yes) { director.yesPlease = false; director.state = 'yes'; director.t = actions.yes.getClip().duration; playMotion('yes', .15); break; }
+      if (director.yesPlease && actions.yes) { director.yesPlease = false; startGesture('yes'); break; }
       playMotion(speaking ? 'talk' : 'idle'); faceCamera(dt);
       if (director.t <= 0) { if (speaking) director.t = 1.5; else chooseNext(); }
       break;
-    case 'yes':
+    case 'gesture': // うなずく・首を振る（1回だけの動きが終わるまで待つ）
       faceCamera(dt);
+      if (!actions[director.gesture]?.isRunning()) toIdle(rand(1.2, 2.5));
+      break;
+    case 'sit':
+      playMotion('sit'); faceCamera(dt);
       if (director.t <= 0) toIdle(rand(1.5, 3));
+      break;
+    case 'jump':
+      faceCamera(dt);
+      if (!actions.jump?.isRunning()) {
+        director.jumps--;
+        if (director.jumps > 0) { const a = actions.jump; a.reset(); a.setEffectiveWeight(1); a.play(); }
+        else toIdle(rand(1.5, 3));
+      }
       break;
     case 'dance':
       playMotion('dance'); faceCamera(dt);
@@ -369,8 +395,32 @@ addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); speak($('#text').value); }
   if (e.key === 'Escape') stop();
   if (e.key === 'h' || e.key === 'H') { const off = document.body.classList.toggle('no-panel'); prefs.set('noPanel', off ? 1 : 0); }
+  if (e.key === 'p' || e.key === 'P') setPresentMode(!presentMode);
+  if (e.key === 't' || e.key === 'T') setClickThrough(!throughOn);
   if (e.key === '[' || e.key === ']') { const r = $('#rate'); r.value = Math.min(1.4, Math.max(0.6, rateMul() + (e.key === ']' ? .05 : -.05))).toFixed(2); r.dispatchEvent(new Event('input')); setStatus(`速さ ${Number(r.value).toFixed(2)}`); }
 });
+/* ---------- 発表モード：背景を透明にして、いちばん手前に出す ---------- */
+let presentMode = false, throughOn = false;
+async function setPresentMode(on) {
+  presentMode = on;
+  scene.background = on ? null : new THREE.Color(0x0d0b14);
+  glow.visible = !on;
+  document.body.classList.toggle('present', on);
+  $('#chkPresent').checked = on;
+  prefs.set('present', on ? 1 : 0);
+  if (tauriWindow) { try { await tauriWindow.setAlwaysOnTop(on); } catch (e) { report('最前面にできませんでした: ' + errText(e)); } }
+  setStatus(on ? '発表モード：背景が透明で、いちばん手前に出ます（P キーで戻せます）' : '通常モードに戻しました');
+}
+async function setClickThrough(on) {
+  throughOn = on;
+  $('#chkThrough').checked = on;
+  if (tauriWindow) { try { await tauriWindow.setIgnoreCursorEvents(on); } catch (e) { report('クリック透過にできませんでした: ' + errText(e)); } }
+  if (!on) setStatus('クリック透過：オフ');
+}
+$('#chkPresent').addEventListener('change', () => setPresentMode($('#chkPresent').checked));
+$('#chkThrough').addEventListener('change', () => setClickThrough($('#chkThrough').checked));
+if (prefs.get('present', '0') === '1') setPresentMode(true); // クリック透過は安全のため毎回オフから始める
+
 // 選んだものを覚える
 $('#rate').addEventListener('input', () => { $('#rateVal').textContent = rateMul().toFixed(2); prefs.set('rate', $('#rate').value); });
 $('#voice').addEventListener('change', () => prefs.set('voice', $('#voice').value));
