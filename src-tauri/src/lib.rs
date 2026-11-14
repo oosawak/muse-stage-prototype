@@ -56,14 +56,22 @@ fn ja_voices() -> Vec<String> {
     .collect()
 }
 
-/// 第2段の実験：Mac版ミューズアプリ（Muse.app）の窓に出ている文字を、アクセシビリティ経由で読む。
+/// 会話の1メッセージ（第2段の取り込み結果）
+#[derive(serde::Serialize)]
+struct ChatMsg { role: String, text: String }
+
+/// 第2段の実験：Mac版ミューズアプリ（Muse.app）の窓に出ている会話を、アクセシビリティ経由で読む。
 /// muse-stage にアクセシビリティの許可が要る（子プロセスの osascript への許可も必要な場合がある）。
-/// 注意：Muse アプリでは `entire contents` が常に 0 件を返す（2026-11-14 実機で確認）。
-/// そのため子要素（UI elements）をレベルごとにまとめて聞く幅優先でたどり、AXStaticText の値を集める。
-/// 会話メッセージは「ユーザーメッセージ: 」「アシスタントメッセージ: 」の接頭辞つきで入っている。
-/// 返り値：読めた文字の一覧（浅い階層から順、同階層では画面の並び順）。読めないときはエラーの文を返す
+/// 実機で分かったこと（2026-11-14）：
+/// - Muse アプリでは `entire contents` が常に 0 件を返す。そのため子要素をレベルごとに聞く幅優先でたどる。
+/// - 会話メッセージには2つの姿がある。古いものは「ユーザーメッセージ: 」「アシスタントメッセージ: 」の
+///   接頭辞つきで1つの AXStaticText に全文が入る。新しいものは段落・コード片ごとにバラバラの要素に分かれ、
+///   接頭辞が無い（ユーザーの発言だけ先頭に「自分:」の断片が付く）。接頭辞だけを探すと最新の返事を逃す。
+/// - 画面に見えている範囲しかツリーに載らない。一番下までスクロールすると新しい返事が載ってくる。
+/// そのため、要素の経路（パス）も一緒に集め、会話リストの子ごとにメッセージを組み立て直す。
+/// 返り値：会話のメッセージ一覧（古い順）。読めないときはエラーの文を返す
 #[tauri::command]
-async fn read_muse(app: String) -> Result<Vec<String>, String> {
+async fn read_muse(app: String) -> Result<Vec<ChatMsg>, String> {
   let app = if app.is_empty() { "Muse".to_string() } else { app };
   let script = format!(r#"
 set texts to {{}}
@@ -72,10 +80,14 @@ tell application "System Events"
   if not (exists process "{app}") then error "{app} が起動していません"
   tell process "{app}"
     set frontier to {{front window}}
+    set fpaths to {{""}}
     set depth to 0
-    repeat while (count of frontier) > 0 and depth < 20 and visited < 6000
+    repeat while (count of frontier) > 0 and depth < 24 and visited < 9000
       set nextFrontier to {{}}
-      repeat with el in frontier
+      set nextPaths to {{}}
+      repeat with fi from 1 to count of frontier
+        set el to item fi of frontier
+        set p to item fi of fpaths
         try
           set kids to (UI elements of el) as list
           if (count of kids) > 0 then
@@ -83,20 +95,23 @@ tell application "System Events"
             set vs to (value of every UI element of el) as list
             repeat with i from 1 to count of kids
               set visited to visited + 1
+              set kp to p & "/" & i
               if (item i of rs as text) is "AXStaticText" then
                 set v to ""
                 try
                   set v to item i of vs as text
                 end try
-                if v is not "" and v is not "missing value" then set end of texts to v
+                if v is not "" and v is not "missing value" then set end of texts to (kp & (ASCII character 9) & v)
               end if
               set end of nextFrontier to item i of kids
+              set end of nextPaths to kp
             end repeat
           end if
         end try
-        if visited >= 6000 then exit repeat
+        if visited >= 9000 then exit repeat
       end repeat
       set frontier to nextFrontier
+      set fpaths to nextPaths
       set depth to depth + 1
     end repeat
   end tell
@@ -106,7 +121,81 @@ return texts as text
 "#);
   let out = Command::new("/usr/bin/osascript").args(["-e", &script]).output().map_err(|e| e.to_string())?;
   if !out.status.success() { return Err(String::from_utf8_lossy(&out.stderr).trim().to_string()); }
-  Ok(String::from_utf8_lossy(&out.stdout).trim_end_matches('\n').split('\u{1e}').map(|s| s.to_string()).filter(|s| !s.trim().is_empty()).collect())
+  let recs: Vec<(Vec<u32>, String)> = String::from_utf8_lossy(&out.stdout).trim_end_matches('\n')
+    .split('\u{1e}')
+    .filter_map(|rec| {
+      let (path, value) = rec.split_once('\t')?;
+      let segs: Vec<u32> = path.split('/').filter(|s| !s.is_empty()).filter_map(|s| s.parse().ok()).collect();
+      if segs.is_empty() || value.trim().is_empty() { None } else { Some((segs, value.to_string())) }
+    })
+    .collect();
+  Ok(build_messages(&recs))
+}
+
+/// 集めた（経路, 文字）から会話のメッセージを組み立てる
+fn build_messages(recs: &[(Vec<u32>, String)]) -> Vec<ChatMsg> {
+  use std::collections::BTreeMap;
+  // 接頭辞つきの値を直接の子に持つ要素＝会話リスト。いちばん多く持つものを採る
+  let mut score: BTreeMap<Vec<u32>, usize> = BTreeMap::new();
+  for (p, v) in recs {
+    if v.starts_with("ユーザーメッセージ:") || v.starts_with("アシスタントメッセージ:") {
+      if let Some((_, parent)) = p.split_last() { *score.entry(parent.to_vec()).or_default() += 1; }
+    }
+  }
+  let list_parent = score.iter().max_by_key(|(_, &s)| s).filter(|(_, &s)| s >= 2).map(|(p, _)| p.clone());
+  let Some(lp) = list_parent else {
+    // 会話リストが特定できないときは、接頭辞つきだけを拾う（従来の動き）
+    let mut out = vec![];
+    for (_, v) in recs {
+      if let Some(b) = v.strip_prefix("アシスタントメッセージ:") { push_msg(&mut out, "assistant", b.trim()); }
+      else if let Some(b) = v.strip_prefix("ユーザーメッセージ:") { push_msg(&mut out, "user", b.trim()); }
+    }
+    return out;
+  };
+  // リストの直接の子（＝1メッセージ）ごとに集める
+  let mut by_child: BTreeMap<u32, Vec<&(Vec<u32>, String)>> = BTreeMap::new();
+  for r in recs {
+    if r.0.len() > lp.len() && r.0[..lp.len()] == lp[..] { by_child.entry(r.0[lp.len()]).or_default().push(r); }
+  }
+  let mut out: Vec<ChatMsg> = vec![];
+  for (_, mut items) in by_child {
+    // その子自体が接頭辞つきの値を持っていれば、それが全文（フラットな姿）
+    let flat = items.iter().find(|(p, _)| p.len() == lp.len() + 1).map(|(_, v)| v.clone());
+    if let Some(v) = &flat {
+      if let Some(b) = v.strip_prefix("アシスタントメッセージ:") { push_msg(&mut out, "assistant", b.trim()); continue; }
+      if let Some(b) = v.strip_prefix("ユーザーメッセージ:") { push_msg(&mut out, "user", b.trim()); continue; }
+    }
+    // バラバラな姿：経路の辞書順（＝文書順）に断片を並べてつなぐ
+    items.sort_by(|a, b| a.0.cmp(&b.0));
+    let frags: Vec<&str> = items.iter().map(|(_, v)| v.trim()).filter(|s| !s.is_empty()).collect();
+    if frags.is_empty() { continue; }
+    // ユーザーの発言は先頭の断片が「自分:」。それ以外はアシスタントの返事とみなす
+    let (role, frags) = if frags[0] == "自分:" { ("user", &frags[1..]) } else { ("assistant", &frags[..]) };
+    if frags.is_empty() { continue; }
+    let mut body = String::new();
+    for f in frags {
+      if body.is_empty() { body.push_str(f); continue; }
+      // 句読点・閉じ括弧で始まる断片や、開き括弧・空白で終わる本文は、改行せずにつなぐ（コード片の分割対策）
+      let starts_punct = f.chars().next().map(|c| "。、）」』！？：；,.・".contains(c)).unwrap_or(false);
+      let prev_open = body.ends_with(|c: char| c.is_whitespace() || "（「『".contains(c));
+      if starts_punct || prev_open { body.push_str(f); } else { body.push('\n'); body.push_str(f); }
+    }
+    let body = body.trim().to_string();
+    if body.is_empty() || is_time_only(&body) { continue; } // 時刻だけの要素はメッセージではない
+    push_msg(&mut out, role, &body);
+  }
+  out
+}
+
+fn push_msg(out: &mut Vec<ChatMsg>, role: &str, text: &str) {
+  if text.is_empty() { return; }
+  if let Some(last) = out.last() { if last.role == role && last.text == text { return; } } // 連続する重複は1つに
+  out.push(ChatMsg { role: role.to_string(), text: text.to_string() });
+}
+
+fn is_time_only(s: &str) -> bool {
+  let s = s.trim();
+  s.len() <= 5 && s.matches(':').count() == 1 && s.chars().all(|c| c.is_ascii_digit() || c == ':')
 }
 
 /// 動作確認の記録を、起動したターミナルに出す

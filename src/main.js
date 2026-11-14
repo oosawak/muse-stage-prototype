@@ -208,24 +208,13 @@ addEventListener('drop', async e => {
 });
 
 /* ---------- 第2段：Muse.app の返事をアクセシビリティで取り込む（実験） ---------- */
-// Muse アプリの会話メッセージは「アシスタントメッセージ: 本文」の形で取れる（2026-11-14 実機で確認）。
-// 同じ階層では並び順＝新しさの順なので、接頭辞つきの最後のものを最新の返事とし、接頭辞を外して返す。
-// 接頭辞つきが無いときは、従来どおり長めの文の最後のものを返す
-function pickLatestReply(texts) {
-  const mine = assistantReplies(texts);
-  if (mine.length) return mine[mine.length - 1];
-  const long = texts.filter(t => t.trim().length >= 6);
-  return (long[long.length - 1] || texts[texts.length - 1] || '').trim();
-}
-// 接頭辞つきのアシスタント返事だけを、接頭辞を外して古い順に取り出す（重複は1つにまとめる）
-function assistantReplies(texts) {
+// Muse アプリの会話メッセージには、接頭辞つきで全文が入る姿と、段落ごとにバラバラな姿がある（2026-11-14 実機で確認）。
+// 取り込み結果（{role, text} の古い順）から、アシスタントの返事だけを古い順に取り出す。
+// メッセージの組み立ては Rust 側（バラバラな断片の結合もそちらでやる）
+function assistantReplies(msgs) {
   const out = [];
-  for (const t of texts) {
-    const s = t.trim();
-    if (s.startsWith('アシスタントメッセージ:')) {
-      const body = s.replace(/^アシスタントメッセージ:\s*/, '');
-      if (body && !out.includes(body)) out.push(body);
-    }
+  for (const m of msgs) {
+    if (m.role === 'assistant' && m.text && !out.includes(m.text)) out.push(m.text);
   }
   return out;
 }
@@ -255,17 +244,17 @@ async function grabMuse(manual = false) {
   // 手動の取り込みは十数秒かかるので、クルクルと「取り込み中」を出してボタンを止める（自動の見回りでは出さない）
   if (manual) { $('#spinner').classList.add('on'); $('#btnGrab').disabled = true; setStatus('Muse.app から取り込み中…'); }
   try {
-    const texts = await invoke('read_muse', { app: 'Muse' });
-    report(`Muse.app から ${texts.length} 個の文字を読めました`);
-    const replies = assistantReplies(texts);
+    const msgs = await invoke('read_muse', { app: 'Muse' });
+    report(`Muse.app から会話 ${msgs.length} 件を読めました`);
+    const replies = assistantReplies(msgs);
     renderReplies(replies);
-    return { texts, replies, latest: pickLatestReply(texts) };
+    return { msgs, replies, latest: replies[replies.length - 1] || '' };
   } finally {
     if (manual) { $('#spinner').classList.remove('on'); $('#btnGrab').disabled = false; }
   }
 }
 $('#btnGrab').onclick = async () => {
-  try { const { texts, replies, latest } = await grabMuse(true); $('#text').value = latest; setStatus(`Muse.app から取り込みました（返事 ${replies.length} 件・画面の文字 ${texts.length} 個。右の一覧からも選べます）`); }
+  try { const { msgs, replies, latest } = await grabMuse(true); $('#text').value = latest; setStatus(`Muse.app から取り込みました（返事 ${replies.length} 件・会話 ${msgs.length} 件。右の一覧からも選べます）`); }
   catch (e) { setStatus('取り込めませんでした：' + errText(e) + '（システム設定 → プライバシーとセキュリティ → アクセシビリティ で Muse Stage を許可）'); report('取り込み失敗: ' + errText(e)); }
 };
 // 自動：2 秒ごとに見て、新しい返事が出たら読み上げる（読み上げ中は待つ）
