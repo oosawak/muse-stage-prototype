@@ -35,8 +35,10 @@ const glow = new THREE.Mesh(new THREE.CircleGeometry(1.4, 64), new THREE.MeshBas
 glow.position.set(0, 1.35, -1.2); scene.add(glow);
 const camera = new THREE.PerspectiveCamera(26, 1, .05, 50);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x443355, 1.1));
-const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(1.2, 2.2, 2.4); scene.add(key);
-const rim = new THREE.DirectionalLight(0xc77dff, 1.2); rim.position.set(-1.6, 1.8, -1.5); scene.add(rim);
+// キーとリムは台（actor）に追従させる。奥へ行っても光の当たり方が変わらないように、ライトと的をリグに入れて台の x/z へ合わせる
+const lightRig = new THREE.Group(); scene.add(lightRig);
+const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(1.2, 2.2, 2.4); lightRig.add(key); key.target.position.set(0, .9, 0); lightRig.add(key.target);
+const rim = new THREE.DirectionalLight(0xc77dff, 1.2); rim.position.set(-1.6, 1.8, -1.5); lightRig.add(rim); rim.target.position.set(0, 1, 0); lightRig.add(rim.target);
 
 let vrm = null, placeholder = null, headY = 1.4;
 const actor = new THREE.Group(); scene.add(actor); // モデルを載せる台。うろうろ・かくれんぼは、この台ごと動かす
@@ -90,7 +92,7 @@ async function loadVRM(url) {
 
 /* ---------- モーション（VRMA）と、うろうろする演出 ---------- */
 // モーション素材は CC0（Quaternius／KayKit を open-vrma が VRMA 化したもの）。出典は MOTIONS.md
-const MOTION_FILES = { idle: 'Idle_Loop', talk: 'Idle_Talking_Loop', walk: 'Walk_Loop', jog: 'Jog_Fwd_Loop', yes: 'Yes', no: 'Idle_No_Loop', dance: 'Dance_Loop', crouch: 'Crouch_Idle_Loop', sit: 'Sitting_Idle_Loop', jump: 'Jump_Loop', roll: 'Roll', punch: 'Punch_Jab', sword: 'Sword_Attack', spell: 'Spell_Simple_Shoot', hit: 'Hit_Chest', death: 'Death01' };
+const MOTION_FILES = { idle: 'Idle_Loop', talk: 'Idle_Talking_Loop', walk: 'Walk_Loop', jog: 'Jog_Fwd_Loop', yes: 'Yes', no: 'Idle_No_Loop', dance: 'Dance_Loop', crouch: 'Crouch_Idle_Loop', jump: 'Jump_Loop', roll: 'Roll', punch: 'Punch_Jab', sword: 'Sword_Attack', spell: 'Spell_Simple_Shoot', hit: 'Hit_Chest', death: 'Death01' };
 const ONESHOT = new Set(['yes', 'no', 'jump', 'punch', 'sword', 'spell', 'hit', 'death']); // 1回だけ再生する動き
 let mixer = null; const actions = {}; let curAction = null, curMotion = '';
 async function setupMotions() {
@@ -118,7 +120,7 @@ function playMotion(name, fade = .3) {
 function stopMotion() { if (curAction) { curAction.fadeOut(.3); curAction = null; curMotion = ''; } }
 
 // 演出の状態遷移：idle →（歩く・走る・隠れる・踊る）→ idle を繰り返す
-const director = { mode: 'wander', state: 'idle', t: 2, target: null, pendingPeek: null, hideY: 0, yesPlease: false, gesture: '', jumps: 0 };
+const director = { mode: 'wander', state: 'idle', t: 2, target: null, pendingPeek: null, hideY: 0, yesPlease: false, gesture: '', jumps: 0, quiet: 0, seq: [] };
 try { director.mode = prefs.get('motion', 'wander'); } catch (e) {}
 function viewHalf() {
   const dist = camera.position.z;
@@ -136,12 +138,61 @@ function turnToward(cur, target, maxStep) {
   return cur + clamp(diff, -maxStep, maxStep);
 }
 const faceCamera = dt => { actor.rotation.y = turnToward(actor.rotation.y, 0, dt * 3.5); };
-function toIdle(t) { director.state = 'idle'; director.t = t; director.target = null; director.pendingPeek = null; }
+function toIdle(t) {
+  director.target = null; director.pendingPeek = null;
+  if (director.seq.length) { runStep(director.seq.shift()); return; } // 物語の続きがあれば、そちらへ
+  director.state = 'idle'; director.t = t;
+}
 function setMove(x, z, clip) {
   director.state = 'move';
   director.target = { x, z, clip, speed: clip === 'jog' ? 1.25 : .5 };
 }
 function startGesture(name) { director.state = 'gesture'; director.gesture = name; playMotion(name, .15); }
+function goPeekSide(side) {
+  const z = clamp(actor.position.z, -.8, .4), h = halfAt(z);
+  director.pendingPeek = 'side';
+  setMove(side * (h.halfW + modelW * .5 - .13), z, 'walk');
+}
+function goPeekBottom() {
+  const h = halfAt(actor.position.z);
+  director.hideY = (h.centerY - h.halfH) - modelH * .78;
+  director.state = 'peekBottom'; director.t = rand(2.5, 4.5);
+}
+function goRoll() {
+  const v = viewHalf(), cx = actor.position.x;
+  const dur = actions.roll?.getClip().duration || 1;
+  const nx = clamp(cx + rand(-1, 1) * .9, -v.halfW * .7, v.halfW * .7);
+  director.state = 'move';
+  director.target = { x: nx, z: actor.position.z, clip: 'roll', speed: Math.abs(nx - cx) / dur || .6 };
+}
+/* 物語：静かな時間が続いたら、小さな一続きの演技をする */
+function runStep(s) {
+  const v = viewHalf();
+  switch (s.k) {
+    case 'move': setMove(s.x, s.z, s.clip || 'walk'); break;
+    case 'peekSide': goPeekSide(s.side || (Math.random() < .5 ? -1 : 1)); break;
+    case 'peekBottom': goPeekBottom(); break;
+    case 'roll': goRoll(); break;
+    case 'dance': director.state = 'dance'; director.t = s.t || 6; break;
+    case 'jump': director.state = 'jump'; director.jumps = 2; playMotion('jump', .1); break;
+    case 'gesture': startGesture(s.name || 'yes'); break;
+    default: director.state = 'idle'; director.t = s.t || 1; // ひと休み
+  }
+}
+function startStory() {
+  const stories = [
+    // かくれんぼ：下に隠れる → 端から顔 → 反対の端から顔 → 跳ねて出てくる
+    [{ k: 'peekBottom' }, { k: 'rest', t: .5 }, { k: 'peekSide', side: -1 }, { k: 'peekSide', side: 1 }, { k: 'jump' }, { k: 'gesture', name: 'yes' }],
+    // 探検：奥へ走る → 端から様子見 → 手前に戻って踊る
+    [{ k: 'move', x: rand(-.5, .5), z: -1.25, clip: 'jog' }, { k: 'peekSide' }, { k: 'move', x: 0, z: .3, clip: 'walk' }, { k: 'dance', t: 6 }],
+    // おどりの練習：踊る → 跳ねる → もっと踊る
+    [{ k: 'dance', t: 6 }, { k: 'jump' }, { k: 'dance', t: 7 }, { k: 'gesture', name: 'yes' }],
+    // ころころ散歩：転がって移動 → 踊る → うなずく
+    [{ k: 'roll' }, { k: 'dance', t: 5 }, { k: 'roll' }, { k: 'gesture', name: 'yes' }],
+  ];
+  director.seq = stories[Math.floor(Math.random() * stories.length)].slice();
+  runStep(director.seq.shift());
+}
 function chooseNext() {
   const v = viewHalf(), cx = actor.position.x, cz = actor.position.z, r = Math.random();
   if (r < .20) { // ちょこちょこ：近くの点へ歩く
@@ -149,26 +200,16 @@ function chooseNext() {
   } else if (r < .31) { // 奥へ走る／手前へ戻る
     setMove(rand(-.6, .6), cz > -.5 ? -1.25 : rand(.1, .5), 'jog');
   } else if (r < .43) { // 端に隠れて顔だけ出す
-    const side = Math.random() < .5 ? -1 : 1;
-    const z = clamp(cz, -.8, .4), h = halfAt(z);
-    director.pendingPeek = 'side';
-    setMove(side * (h.halfW + modelW * .5 - .13), z, 'walk');
+    goPeekSide(Math.random() < .5 ? -1 : 1);
   } else if (r < .53) { // 下に隠れて顔だけ出す
-    const h = halfAt(actor.position.z);
-    director.hideY = (h.centerY - h.halfH) - modelH * .78;
-    director.state = 'peekBottom'; director.t = rand(2.5, 4.5);
-  } else if (r < .63) { // おすわりして休む
-    director.state = 'sit'; director.t = rand(4, 8);
-  } else if (r < .71) { // ぴょんぴょん跳ねる（2回）
+    goPeekBottom();
+  } else if (r < .60) { // ぴょんぴょん跳ねる（2回）
     director.state = 'jump'; director.jumps = 2; playMotion('jump', .1);
-  } else if (r < .78) { // ころころ転がって移動する
-    const dur = actions.roll?.getClip().duration || 1;
-    const nx = clamp(cx + rand(-1, 1) * .9, -v.halfW * .7, v.halfW * .7);
-    director.state = 'move';
-    director.target = { x: nx, z: cz, clip: 'roll', speed: Math.abs(nx - cx) / dur || .6 };
-  } else if (r < .86) { // たまに踊る
-    director.state = 'dance'; director.t = rand(4, 7);
-  } else if (r < .89) { // たまに首を振る（いやいや）
+  } else if (r < .67) { // ころころ転がって移動する
+    goRoll();
+  } else if (r < .83) { // よく踊る
+    director.state = 'dance'; director.t = rand(5, 9);
+  } else if (r < .86) { // たまに首を振る（いやいや）
     startGesture('no');
   } else toIdle(rand(2.5, 5));
 }
@@ -179,17 +220,18 @@ function directorUpdate(dt) {
   director.t -= dt;
   switch (director.state) {
     case 'idle':
+      if (speaking) director.quiet = 0; else director.quiet += dt; // 静かな時間をはかる
       if (director.yesPlease && actions.yes) { director.yesPlease = false; startGesture('yes'); break; }
       playMotion(speaking ? 'talk' : 'idle'); faceCamera(dt);
-      if (director.t <= 0) { if (speaking) director.t = 1.5; else chooseNext(); }
+      if (director.t <= 0) {
+        if (speaking) director.t = 1.5;
+        else if (director.quiet > 18 && !director.seq.length) startStory(); // しばらく話がなければ、物語を始める
+        else chooseNext();
+      }
       break;
     case 'gesture': // うなずく・首を振る（1回だけの動きが終わるまで待つ）
       faceCamera(dt);
       if (!actions[director.gesture]?.isRunning()) toIdle(rand(1.2, 2.5));
-      break;
-    case 'sit':
-      playMotion('sit'); faceCamera(dt);
-      if (director.t <= 0) toIdle(rand(1.5, 3));
       break;
     case 'jump':
       faceCamera(dt);
@@ -262,6 +304,7 @@ function tick() {
     placeholder.rotation.y = Math.sin(t * .5) * .08;
   }
   glow.material.opacity = .45 + (speaking ? .15 * (Math.sin(t * 6) * .5 + .5) : 0);
+  lightRig.position.set(actor.position.x, 0, actor.position.z);
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
