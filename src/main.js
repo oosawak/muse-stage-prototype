@@ -295,6 +295,25 @@ function directorUpdate(dt) {
 
 /* ---------- 口パク・まばたき・待機の動き ---------- */
 let speaking = false, mouth = 0, blinkT = 2;
+
+/* 会話の内容による動作の切り替え（舞台側の自動判定。送り手の印は使わない）
+   読み上げの頭で文を見て、はっきりした場面だけポーズを決める。文の途中では切り替えない。
+   回転の多い動きは使わない（目が回るので控えめにする本人の指示に合わせる）。 */
+let speechPose = null; // { kind: 'wave'|'bow'|'tilt'|'bounce'|'nod', at: 開始時刻 }
+function classifySpeech(text) {
+  const s = String(text || '').trim(); if (!s) return null;
+  if (/ありがとう|ありがたい|感謝|thank/i.test(s)) return 'bow'; // お礼 → おじぎ
+  if (/こんにちは|こんばんは|おはよう|はじめまして|お久しぶり|hello|\bhi\b|good (morning|afternoon|evening)/i.test(s)) return 'wave'; // 挨拶 → 手を振る
+  if (/[？?]/.test(s) || /ですか|ますか|でしょうか/.test(s) || /^(do|does|did|is|are|was|were|can|could|would|will|what|where|when|why|how|who|which)\b/i.test(s)) return 'tilt'; // 質問 → 首をかしげる
+  if (/[！!]/.test(s) || /やった|嬉しい|うれしい|楽しい|すごい|素晴らしい|最高|わーい|やっほー|great|wonderful|awesome|amazing|excellent|fantastic/i.test(s)) return 'bounce'; // 嬉しい・元気 → 軽く弾む
+  if (/^(はい|うん|そう|そうです|そうですね|なるほど|分かりました|わかりました|了解|その通り|おっしゃる通り|yes|yeah|sure|right|exactly|indeed)/i.test(s)) return 'nod'; // 相づち・同意 → うなずく
+  return null; // それ以外は通常のおしゃべりの動きのまま
+}
+function armSpeechPose(text) {
+  const kind = classifySpeech(text);
+  speechPose = kind ? { kind, at: clock.elapsedTime } : null;
+  if (vrm && !kind) vrm.scene.position.y = 0;
+}
 const clock = new THREE.Clock();
 function tick() {
   const dt = Math.min(.05, clock.getDelta()), t = clock.elapsedTime;
@@ -312,6 +331,32 @@ function tick() {
       const b = n => vrm.humanoid.getNormalizedBoneNode(n);
       const sp = b('spine'); if (sp) sp.rotation.x = Math.sin(t * 1.6) * .015;
       const hd = b('head'); if (hd) { hd.rotation.x = speaking ? Math.sin(t * 3.1) * .04 : Math.sin(t * .9) * .015; hd.rotation.y = Math.sin(t * .5) * .05; }
+    }
+    if (speechPose) { // 会話の内容で決めたポーズ（骨への上乗せ。モーション再生中でも効く）
+      const e = t - speechPose.at, b = n => vrm.humanoid.getNormalizedBoneNode(n);
+      const env = (dur, inT = .25, outT = .3) => e >= dur ? 0 : Math.min(1, e / inT) * (e > dur - outT ? Math.max(0, (dur - e) / outT) : 1);
+      if (speechPose.kind === 'wave') { // 左手を上げて振る（腕を下ろした角度 -1.2 が起点）
+        const k = env(1.6), ua = b('leftUpperArm'), la = b('leftLowerArm');
+        if (ua) ua.rotation.z = -1.2 + k * 2.0;
+        if (la && k > 0) la.rotation.z = Math.sin(e * 9) * .35 * k;
+        if (e >= 1.6) speechPose = null;
+      } else if (speechPose.kind === 'bow') { // おじぎ
+        const k = Math.sin(Math.min(1, e / 1.15) * Math.PI), sp = b('spine'), hd = b('head');
+        if (sp) sp.rotation.x += k * .34;
+        if (hd) hd.rotation.x += k * .14;
+        if (e >= 1.15) speechPose = null;
+      } else if (speechPose.kind === 'tilt') { // 首をかしげる（話している間。長くても6秒まで）
+        const k = Math.min(1, e / .3), hd = b('head');
+        if (hd && speaking) { hd.rotation.z = .15 * k; hd.rotation.y += .05 * k; }
+        if (!speaking || e > 6) speechPose = null;
+      } else if (speechPose.kind === 'bounce') { // 軽く弾む（台ではなくモデル側だけを上下させる）
+        if (e < 1.15) vrm.scene.position.y = Math.abs(Math.sin(e * 9)) * .05 * (1 - e / 1.15);
+        else { vrm.scene.position.y = 0; speechPose = null; }
+      } else if (speechPose.kind === 'nod') { // うなずく（2回）
+        const hd = b('head');
+        if (hd && e < 1.15) hd.rotation.x = Math.abs(Math.sin(e * 5.5)) * .16 + Math.sin(t * 3.1) * .02;
+        if (e >= 1.15) speechPose = null;
+      }
     }
     vrm.update(dt);
   } else if (placeholder) {
@@ -457,6 +502,7 @@ async function speak(text) {
     for (const seg of segs) {
       if (run !== speakRun) { used = 'stopped'; break; }
       showCaption(seg.text, segs.length > 1 ? (seg.who === 'user' ? '本人' : 'ミューズ') : '');
+      armSpeechPose(seg.text); // 文ごとに、内容でポーズを決める（質問の文は首かしげ、など）
       used = await speakOne(seg.text, seg.who);
       if (used === 'stopped') break;
     }
@@ -471,7 +517,7 @@ async function speak(text) {
 }
 function stop() {
   speakRun++;
-  speaking = false;
+  speaking = false; speechPose = null; if (vrm) vrm.scene.position.y = 0;
   stopVoicevox();
   try { window.speechSynthesis?.cancel(); } catch (e) {}
   if (inTauri) invoke('stop_say').catch(() => {});
