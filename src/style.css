@@ -25,7 +25,13 @@ button.primary { background: linear-gradient(180deg, #d79bff, #9a4dff); color: #
 button:disabled { opacity: .45; cursor: default; }
 select { max-width: 150px; }
 .chk { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); }
-.status { margin-top: 6px; color: var(--muted); min-height: 1.2em; }
+.status { color: var(--muted); min-height: 1.2em; }
+.status-line { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+/* 取り込み中などのクルクル（読み取りに十数秒かかるので、動いていることを見せる） */
+.spinner { display: none; width: 12px; height: 12px; flex: none; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.25); border-top-color: var(--accent); animation: spin .7s linear infinite; }
+.spinner.on { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .keys { margin-top: 4px; color: var(--muted); opacity: .75; font-size: 11px; }
 .chk input[type=range] { width: 90px; accent-color: var(--accent); }
 /* 取り込んだ返事の一覧：右側に出す。操作パネルと同じく、ふだんは薄く、マウスで濃くなる */
