@@ -393,13 +393,18 @@ function rand(a, b) { return a + Math.random() * (b - a); }
 let webOk = null; // null=まだ試していない true/false=試した結果
 function webVoices() { return (window.speechSynthesis?.getVoices() || []).filter(v => /^ja/i.test(v.lang)); }
 
-function speakWeb(text) {
+function speakWeb(text, who = 'muse') {
   return new Promise((resolve, reject) => {
     const ss = window.speechSynthesis;
     if (!ss || typeof SpeechSynthesisUtterance === 'undefined') return reject(new Error('speechSynthesis がありません'));
     ss.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'ja-JP'; u.rate = rateMul(); const jv = webVoices(); if (jv.length) u.voice = jv.find(v => /kyoko/i.test(v.name)) || jv[0];
+    u.lang = 'ja-JP'; u.rate = rateMul(); const jv = webVoices();
+    if (jv.length) {
+      // 声分け：本人の文は男性の声（あれば）を選び、無ければピッチを下げて区別する
+      u.voice = who === 'user' ? (jv.find(v => /otoya|ichiro|男性|male/i.test(v.name)) || jv[0]) : (jv.find(v => /kyoko/i.test(v.name)) || jv[0]);
+    }
+    if (who === 'user' && !/otoya|ichiro|男性|male/i.test(u.voice?.name || '')) u.pitch = 0.7;
     let started = false;
     const timer = setTimeout(() => { if (!started) { ss.cancel(); reject(new Error('1.5 秒たっても読み上げが始まりません')); } }, 1500);
     u.onstart = () => { started = true; clearTimeout(timer); speaking = true; };
@@ -424,9 +429,23 @@ async function zundamonSpeakerId() {
   } catch (e) { /* 引けなければ既定の 3 を使う */ }
   vvSpeakerId = 3; return vvSpeakerId;
 }
-async function speakVoicevox(text) {
+// 声分け版：本人の文は VOICEVOX の男性話者「玄野武宏（ノーマル）」で読む。ずんだもんと同じ /speakers から名前で引く
+let vvMaleId = null;
+async function maleSpeakerId() {
+  if (vvMaleId !== null) return vvMaleId;
+  try {
+    const speakers = await (await fetch(VV_BASE + '/speakers')).json();
+    const m = speakers.find(s => (s.name || '').includes('玄野武宏'));
+    const st = m?.styles?.find(s => s.name === 'ノーマル') || m?.styles?.[0];
+    if (st) { vvMaleId = st.id; return vvMaleId; }
+  } catch (e) { /* 引けなければ null（呼び出し側はずんだもんで代替する） */ }
+  vvMaleId = null; return null;
+}
+async function speakVoicevox(text, who = 'muse') {
   let speaker;
-  try { speaker = await zundamonSpeakerId(); }
+  try {
+    speaker = who === 'user' ? ((await maleSpeakerId()) ?? (await zundamonSpeakerId())) : await zundamonSpeakerId();
+  }
   catch (e) { throw new Error('VOICEVOX に接続できません'); }
   let query;
   try {
@@ -451,36 +470,71 @@ function stopVoicevox() {
   if (vvAudio) { try { vvAudio.pause(); } catch (e) {} vvAudio = null; }
   if (vvUrl) { URL.revokeObjectURL(vvUrl); vvUrl = null; }
 }
-async function speakSay(text) {
+async function speakSay(text, who = 'muse') {
   if (!inTauri) throw new Error('say は Tauri アプリの中でだけ使えます');
   speaking = true;
-  try { const r = await invoke('speak_say', { text, voice: $('#voice').value || 'Kyoko', rate: Math.round(175 * rateMul() ** 2) }); return r === 'stopped' ? 'stopped' : 'say'; }
+  // 声分け：本人の文は、選択肢に男性の声（Otoya）があればそちらで読む
+  let voice = $('#voice').value || 'Kyoko';
+  if (who === 'user') { const male = [...$('#voice').options].find(o => /otoya/i.test(o.value)); if (male) voice = male.value; }
+  try { const r = await invoke('speak_say', { text, voice, rate: Math.round(175 * rateMul() ** 2) }); return r === 'stopped' ? 'stopped' : 'say'; }
   finally { speaking = false; }
+}
+/* ---------- 声分け：印つきの文を話者ごとの断片に分ける ---------- */
+// 配達文の形式（声分け版）：行単独の「@user」が本人の文、「@muse」がミューズの文の始まり。
+// 印が無い文は全部ミューズの文（従来の配達と互換）。声分けオフのときも全部ミューズ扱い。
+function parseSegments(text) {
+  if (!$('#chkSplit')?.checked) return [{ who: 'muse', text: text.trim() }];
+  const segs = []; let cur = { who: 'muse', text: '' };
+  const flush = () => { const t = cur.text.trim(); if (t) segs.push({ who: cur.who, text: t }); };
+  for (const line of text.split('\n')) {
+    const m = line.trim();
+    if (m === '@user' || m === '@muse') { flush(); cur = { who: m === '@user' ? 'user' : 'muse', text: '' }; }
+    else cur.text += (cur.text ? '\n' : '') + line;
+  }
+  flush();
+  return segs.length ? segs : [{ who: 'muse', text: text.trim() }];
+}
+let speakRun = 0; // 停止したら続きの断片を喋らないための世代番号
+async function speakOne(text, who) {
+  const mode = $('#engine').value;
+  if (mode === 'voicevox') return await speakVoicevox(text, who);
+  if (mode === 'web' || (mode === 'auto' && webOk !== false)) {
+    try { const used = await speakWeb(text, who); webOk = true; return used; }
+    catch (e) {
+      report(`speechSynthesis: 使えません（${e.message}）`);
+      if (mode === 'web') throw e;
+      webOk = false; setStatus('speechSynthesis が使えないので、macOS の say で読み上げます');
+      return await speakSay(text, who);
+    }
+  }
+  return await speakSay(text, who);
 }
 async function speak(text) {
   text = text.trim(); if (!text) return;
-  stop(); showCaption(text); armSpeechPose(text);
-  const mode = $('#engine').value;
+  stop();
+  const run = ++speakRun;
+  const segs = parseSegments(text);
   $('#btnSpeak').disabled = true;
   try {
-    let used;
-    if (mode === 'voicevox') used = await speakVoicevox(text);
-    else if (mode === 'web' || (mode === 'auto' && webOk !== false)) {
-      try { used = await speakWeb(text); webOk = true; }
-      catch (e) {
-        report(`speechSynthesis: 使えません（${e.message}）`);
-        if (mode === 'web') throw e;
-        webOk = false; setStatus('speechSynthesis が使えないので、macOS の say で読み上げます');
-        used = await speakSay(text);
-      }
-    } else used = await speakSay(text);
-    setStatus(used === 'voicevox' ? '読み上げ：VOICEVOX（ずんだもん）' : used === 'web' ? '読み上げ：WebView の speechSynthesis' : used === 'say' ? `読み上げ：macOS の say（${$('#voice').value || 'Kyoko'}）` : '止めました');
+    let used = '';
+    for (const seg of segs) {
+      if (run !== speakRun) { used = 'stopped'; break; }
+      showCaption(seg.text, segs.length > 1 ? (seg.who === 'user' ? '本人' : 'ミューズ') : '');
+      armSpeechPose(seg.text); // 文ごとに、内容でポーズを決める（質問の文は首かしげ、など）
+      used = await speakOne(seg.text, seg.who);
+      if (used === 'stopped') break;
+    }
+    if (used && used !== 'stopped') {
+      const splitNote = segs.some(s => s.who === 'user') ? '（声分け）' : '';
+      setStatus((used === 'voicevox' ? '読み上げ：VOICEVOX（ずんだもん／玄野武宏）' : used === 'web' ? '読み上げ：WebView の speechSynthesis' : `読み上げ：macOS の say（${$('#voice').value || 'Kyoko'}）`) + splitNote);
+    } else if (used === 'stopped') setStatus('止めました');
     report(`読み上げ完了: ${used}`);
     return used;
   } catch (e) { setStatus('読み上げられませんでした：' + errText(e)); report('読み上げ失敗: ' + errText(e)); }
   finally { $('#btnSpeak').disabled = false; speaking = false; setTimeout(hideCaption, 1200); }
 }
 function stop() {
+  speakRun++;
   speaking = false; speechPose = null; if (vrm) vrm.scene.position.y = 0;
   stopVoicevox();
   try { window.speechSynthesis?.cancel(); } catch (e) {}
@@ -488,9 +542,10 @@ function stop() {
 }
 
 /* ---------- 字幕 ---------- */
-function showCaption(text) {
+function showCaption(text, label = '') {
   if (!$('#chkCaption').checked) return;
-  $('#caption').innerHTML = `<span class="done"></span><span class="rest"></span>`;
+  $('#caption').innerHTML = (label ? `<span class="who"></span>` : '') + `<span class="done"></span><span class="rest"></span>`;
+  if (label) $('#caption').querySelector('.who').textContent = label + '：';
   showCaptionProgress(text, 0); $('#caption').classList.add('on');
 }
 function showCaptionProgress(text, i) {
@@ -599,6 +654,8 @@ $('#engine').addEventListener('change', () => prefs.set('engine', $('#engine').v
 $('#chkCaption').addEventListener('change', () => prefs.set('caption', $('#chkCaption').checked ? 1 : 0));
 $('#chkAuto').addEventListener('change', () => prefs.set('auto', $('#chkAuto').checked ? 1 : 0));
 $('#chkAutoGrab').addEventListener('change', () => prefs.set('autoGrab', $('#chkAutoGrab').checked ? 1 : 0));
+$('#chkSplit').addEventListener('change', () => prefs.set('split', $('#chkSplit').checked ? 1 : 0));
+$('#chkSplit').checked = prefs.get('split', '0') === '1'; // 統合版の既定はオフ（オンにすると設定が残る）
 $('#rate').value = prefs.get('rate', '0.9'); $('#rateVal').textContent = rateMul().toFixed(2);
 $('#engine').value = prefs.get('engine', inTauri ? 'voicevox' : 'web'); // アプリ版の既定は VOICEVOX、Web版はブラウザの読み上げ（https からはローカルの VOICEVOX に繋がらない）
 $('#chkCaption').checked = prefs.get('caption', '1') === '1';
