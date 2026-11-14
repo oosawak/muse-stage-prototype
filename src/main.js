@@ -50,7 +50,7 @@ function frameCamera() {
   // 全身がほぼ入る距離感（近すぎるという本人の指摘で、上半身寄りから引いた構図へ。2026-11-15）
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  const dist = (w / h < 1 ? 3.2 : 2.5) * modelH; // 背の高いモデルほどカメラを引く
+  const dist = (w / h < 1 ? 3.2 : 2.5) * modelH * (typeof slides !== 'undefined' && slides.urls.length ? 1.55 : 1); // 背の高いモデルほど引く。スライド表示中はさらに引いて小さく（資料の邪魔をしない）
   camera.position.set(0, headY - modelH * .24, dist); camera.lookAt(0, headY - modelH * .32, 0);
   camera.updateProjectionMatrix();
 }
@@ -148,21 +148,25 @@ function toIdle(t) {
   director.state = 'idle'; director.t = t;
 }
 function setMove(x, z, clip) {
-  director.state = 'move';
+  if (typeof slides !== 'undefined' && slides.urls.length) { const v = viewHalf(); x = clamp(x, v.halfW * .18, v.halfW * .82); z = clamp(z, -.75, .1); } // スライド表示中は右側の範囲だけを動く
+  director.state = 'move'; director.moveT = 0;
   director.target = { x, z, clip, speed: clip === 'jog' ? 1.25 : .5 };
 }
 function startGesture(name) { director.state = 'gesture'; director.gesture = name; playMotion(name, .15); }
 function goPeekSide(side) {
+  if (typeof slides !== 'undefined' && slides.urls.length) { toIdle(rand(3, 6)); return; } // スライド表示中は隠れに行かない
   const z = clamp(actor.position.z, -.8, .4), h = halfAt(z);
   director.pendingPeek = 'side';
   setMove(side * (h.halfW + modelW * .5 - .13), z, 'walk');
 }
 function goPeekBottom() {
+  if (typeof slides !== 'undefined' && slides.urls.length) { toIdle(rand(3, 6)); return; } // スライド表示中は隠れに行かない
   const h = halfAt(actor.position.z);
   director.hideY = (h.centerY - h.halfH) - modelH * .78;
   director.state = 'peekBottom'; director.t = rand(2.5, 4.5);
 }
 function goRoll() {
+  if (typeof slides !== 'undefined' && slides.urls.length) { setMove(actor.position.x + rand(-.3, .3), actor.position.z, 'walk'); return; } // スライド表示中は転がらない
   // ころころは回転が多く、見ていて目が回るので連発しない（間隔をあける）
   if (director.rollCool > 0) { const v0 = viewHalf(); setMove(clamp(actor.position.x + rand(-1, 1) * .7, -v0.halfW * .7, v0.halfW * .7), actor.position.z, 'walk'); return; }
   director.rollCool = 40;
@@ -232,6 +236,11 @@ function directorUpdate(dt) {
     if (director.state !== 'idle') { director.state = 'idle'; director.t = 2; }
     director.seq = []; director.pendingPeek = null; director.target = null; director.quiet = 0;
     actor.position.y += (0 - actor.position.y) * Math.min(1, dt * 4); // 下に隠れている途中なら、立ち位置に戻る
+    if (typeof slides !== 'undefined' && slides.urls.length) { // スライド表示中は、右側の定位置へ寄って喋る
+      const hx = viewHalf().halfW * .58;
+      actor.position.x += (hx - actor.position.x) * Math.min(1, dt * 2);
+      actor.position.z += (-.12 - actor.position.z) * Math.min(1, dt * 2);
+    }
     playMotion('talk'); faceCamera(dt);
     return;
   }
@@ -268,15 +277,20 @@ function directorUpdate(dt) {
       const tg = director.target; if (!tg) { toIdle(1); break; }
       playMotion(tg.clip);
       const dx = tg.x - actor.position.x, dz = tg.z - actor.position.z, d = Math.hypot(dx, dz);
-      if (d < .06) {
+      director.moveT = (director.moveT || 0) + dt;
+      // 到着判定：近づいたら着いたことにする。6秒かかりすぎたら諦める。
+      // （目標の周りを回り続けてしまう暴走の防止。2026-11-15「時間を置くと回りだす」の原因）
+      if (d < .08 || director.moveT > 6) {
+        if (d < .3) { actor.position.x = tg.x; actor.position.z = tg.z; }
+        director.moveT = 0;
         if (director.pendingPeek === 'side') { director.pendingPeek = null; director.state = 'peekSide'; director.t = rand(2.5, 4.5); }
         else toIdle(rand(2, 5));
         break;
       }
       actor.rotation.y = turnToward(actor.rotation.y, Math.atan2(dx, dz), dt * 4.5);
       const step = Math.min(d, tg.speed * dt);
-      actor.position.x += Math.sin(actor.rotation.y) * step;
-      actor.position.z += Math.cos(actor.rotation.y) * step;
+      actor.position.x += (dx / d) * step; // 体の向きではなく目標へ直接進む（周回しない）
+      actor.position.z += (dz / d) * step;
       break;
     }
     case 'peekSide':
@@ -566,6 +580,7 @@ function updateStageBackground() {
   const clear = slides.urls.length > 0;
   scene.background = clear ? null : new THREE.Color(0x0d0b14);
   glow.visible = !clear;
+  frameCamera(); // スライドの有無でキャラクターの大きさを切り替える
 }
 
 /* ---------- スライド表示：舞台の後ろにスライドを敷き、キャラクターがその手前で動く ---------- */
@@ -585,14 +600,47 @@ function clearSlides() {
   $('#slideCount').textContent = '';
   updateStageBackground();
 }
-$('#slideFiles').addEventListener('change', e => {
+async function pdfToImageUrls(file) {
+  // PDFは全ページを画像化して、1ページ＝1スライドにする（PDFを1枚の絵としては読めないため）
+  const pdfjs = await import('pdfjs-dist');
+  const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  const urls = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    urls.push(URL.createObjectURL(blob));
+  }
+  return urls;
+}
+$('#slideFiles').addEventListener('change', async e => {
   const files = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
   if (!files.length) return;
   clearSlides();
-  slides.urls = files.map(f => URL.createObjectURL(f));
-  slides.names = files.map(f => f.name);
+  setStatus('スライドを読み込んでいます…');
+  try {
+    for (const f of files) {
+      if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+        const urls = await pdfToImageUrls(f);
+        slides.urls.push(...urls);
+        urls.forEach((_, i) => slides.names.push(f.name + ' p' + (i + 1)));
+      } else {
+        slides.urls.push(URL.createObjectURL(f));
+        slides.names.push(f.name);
+      }
+    }
+  } catch (err) { setStatus('スライドを読み込めませんでした：' + errText(err)); }
+  if (!slides.urls.length) return;
   showSlide(0);
-  setStatus('スライドを ' + files.length + ' 枚読み込みました（→キーか、舞台をクリックで進みます）');
+  // 初期位置は右側（資料の邪魔にならないように）
+  actor.position.x = viewHalf().halfW * .55; actor.position.z = -.1;
+  director.state = 'idle'; director.t = 2;
+  setStatus('スライドを ' + slides.urls.length + ' 枚読み込みました（→キーか、舞台をクリックで進みます）');
 });
 $('#btnSlidePrev').addEventListener('click', () => showSlide(slides.i - 1));
 $('#btnSlideNext').addEventListener('click', () => showSlide(slides.i + 1));
@@ -616,6 +664,14 @@ $('#motionMode').value = director.mode;
 $('#motionMode').addEventListener('change', () => { director.mode = $('#motionMode').value; prefs.set('motion', director.mode); });
 $('#chkAutoGrab').checked = prefs.get('autoGrab', '0') === '1';
 if (prefs.get('noPanel', '0') === '1') document.body.classList.add('no-panel');
+// 操作パネルの折りたたみ（下に畳んで、細いバーだけ残す）
+function setPanelFolded(fold) {
+  $('#panel').classList.toggle('folded', fold);
+  $('#btnPanelFold').textContent = fold ? 'パネルを開く ▴' : 'パネルをたたむ ▾';
+  prefs.set('panelFold', fold ? 1 : 0);
+}
+$('#btnPanelFold').addEventListener('click', () => setPanelFolded(!$('#panel').classList.contains('folded')));
+if (prefs.get('panelFold', '0') === '1') setPanelFolded(true);
 // マウスを動かしたときだけ、操作パネルを濃く見せる
 let awakeT = 0; addEventListener('mousemove', () => { document.body.classList.add('awake'); clearTimeout(awakeT); awakeT = setTimeout(() => document.body.classList.remove('awake'), 2500); });
 // VRM ファイルを画面に落とすと入れ替わる

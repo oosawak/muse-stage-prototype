@@ -20,6 +20,10 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
   background: rgba(20,16,30,.78); border: 1px solid var(--line); backdrop-filter: blur(6px);
   opacity: .18; transition: opacity .3s; font-size: 12px; }
 .panel:hover, .panel:focus-within, body.awake .panel { opacity: 1; }
+.foldbar { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+.foldbar button { font: inherit; font-size: 11px; cursor: pointer; background: transparent; color: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
+.panel.folded > *:not(.foldbar) { display: none !important; }
+.panel.folded { padding-bottom: 4px; }
 .panel textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 54px; font: inherit; font-size: 13px;
   background: rgba(0,0,0,.35); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
