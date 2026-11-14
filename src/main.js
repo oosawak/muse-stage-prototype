@@ -6,11 +6,12 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 const $ = s => document.querySelector(s);
 const inTauri = '__TAURI_INTERNALS__' in window;
 let invoke = async () => { throw new Error('Tauri の外では使えません'); };
-let tauriWindow = null;
+let tauriWindow = null, hookListen = null;
 if (inTauri) {
   ({ invoke } = await import('@tauri-apps/api/core'));
   const { getCurrentWindow } = await import('@tauri-apps/api/window');
   tauriWindow = getCurrentWindow();
+  ({ listen: hookListen } = await import('@tauri-apps/api/event'));
 }
 const errText = e => String(e?.message ?? e); // Rust 側のエラーは文字列で届く
 const report = msg => { console.log('[muse-stage]', msg); if (inTauri) invoke('report', { msg }).catch(() => {}); };
@@ -283,6 +284,18 @@ function renderReplies(replies) {
     list.appendChild(b);
   });
 }
+/* ---------- ウェブ版フック：ブラウザから届いた返事を受ける ---------- */
+let stageReplies = [];
+if (hookListen) hookListen('hooked-reply', e => {
+  const text = (e.payload?.text || '').trim();
+  if (!text) return;
+  if (stageReplies[stageReplies.length - 1] !== text) { stageReplies = [...stageReplies, text]; renderReplies(stageReplies); }
+  $('#text').value = text;
+  setStatus('ウェブから返事が届きました');
+  report('フックで返事を受信しました');
+  if ($('#chkAuto').checked && !speaking) speak(text); // 「自動で読む」が入っていれば、そのまま読み上げる
+});
+
 async function grabMuse(manual = false) {
   if (!inTauri) throw new Error('アプリの中でだけ使えます');
   // 手動の取り込みは十数秒かかるので、クルクルと「取り込み中」を出してボタンを止める（自動の見回りでは出さない）
@@ -291,6 +304,7 @@ async function grabMuse(manual = false) {
     const msgs = await invoke('read_muse', { app: 'Muse' });
     report(`Muse.app から会話 ${msgs.length} 件を読めました`);
     const replies = assistantReplies(msgs);
+    stageReplies = replies;
     renderReplies(replies);
     return { msgs, replies, latest: replies[replies.length - 1] || '' };
   } finally {

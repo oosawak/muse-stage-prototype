@@ -247,6 +247,67 @@ fn is_time_only(s: &str) -> bool {
   s.len() <= 5 && s.matches(':').count() == 1 && s.chars().all(|c| c.is_ascii_digit() || c == ':')
 }
 
+/// ウェブ版フックで届く返事（ブラウザ側スクリプト → この受け口 → 画面へのイベント）
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct HookReply { text: String, role: Option<String> }
+
+/// ローカルの受け口（127.0.0.1:17654）を開き、POST /reply で届いた返事を画面へ渡す。
+/// ブラウザ（https のページ）からローカルへ送るため、CORS と Private Network Access のヘッダを返す
+fn start_hook_server(app: tauri::AppHandle) {
+  use std::io::{Read, Write};
+  use tauri::Emitter;
+  std::thread::spawn(move || {
+    let listener = match std::net::TcpListener::bind("127.0.0.1:17654") {
+      Ok(l) => l,
+      Err(e) => { println!("[muse-stage] フック受け口を開けません: {e}"); return; }
+    };
+    println!("[muse-stage] フック受け口: http://127.0.0.1:17654/reply");
+    for stream in listener.incoming() {
+      let Ok(mut s) = stream else { continue };
+      let app = app.clone();
+      std::thread::spawn(move || {
+        let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(3)));
+        let mut buf: Vec<u8> = vec![];
+        let mut chunk = [0u8; 8192];
+        let header_end = loop {
+          match s.read(&mut chunk) {
+            Ok(0) => return,
+            Ok(n) => { buf.extend_from_slice(&chunk[..n]); if let Some(pos) = find_sub(&buf, b"\r\n\r\n") { break pos + 4; } if buf.len() > 262144 { return; } }
+            Err(_) => return,
+          }
+        };
+        let head = String::from_utf8_lossy(&buf[..header_end]).to_string();
+        let method = head.split_whitespace().next().unwrap_or("").to_string();
+        let cors = "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Allow-Private-Network: true\r\n";
+        if method == "OPTIONS" {
+          let _ = s.write_all(format!("HTTP/1.1 204 No Content\r\n{cors}Content-Length: 0\r\n\r\n").as_bytes());
+          return;
+        }
+        if method != "POST" { let _ = s.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n"); return; }
+        let want: usize = head.lines().find_map(|l| {
+          let l = l.to_ascii_lowercase();
+          l.strip_prefix("content-length:").and_then(|v| v.trim().parse().ok())
+        }).unwrap_or(0);
+        while buf.len() - header_end < want && buf.len() <= 262144 {
+          match s.read(&mut chunk) { Ok(0) => break, Ok(n) => buf.extend_from_slice(&chunk[..n]), Err(_) => break }
+        }
+        let end = (header_end + want).min(buf.len());
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&buf[header_end..end]) {
+          let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("").trim().to_string();
+          if !text.is_empty() {
+            println!("[muse-stage] フックで返事が届きました（{} 文字）", text.chars().count());
+            let role = v.get("role").and_then(|r| r.as_str()).map(|s| s.to_string());
+            let _ = app.emit("hooked-reply", HookReply { text, role });
+          }
+        }
+        let _ = s.write_all(format!("HTTP/1.1 200 OK\r\n{cors}Content-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}").as_bytes());
+      });
+    }
+  });
+}
+
+fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> { hay.windows(needle.len()).position(|w| w == needle) }
+
 /// 動作確認の記録を、起動したターミナルに出す
 #[tauri::command]
 fn report(msg: String) { println!("[muse-stage] {msg}"); }
@@ -259,6 +320,7 @@ fn selftest() -> bool { std::env::var("MUSE_SELFTEST").map(|v| v == "1").unwrap_
 pub fn run() {
   tauri::Builder::default()
     .manage(Speaker(Mutex::new(None)))
+    .setup(|app| { start_hook_server(app.handle().clone()); Ok(()) })
     .invoke_handler(tauri::generate_handler![speak_say, stop_say, ja_voices, report, selftest, read_muse])
     .run(tauri::generate_context!())
     .expect("muse-stage を起動できませんでした");
