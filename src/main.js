@@ -438,37 +438,16 @@ addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); speak($('#text').value); }
   if (e.key === 'Escape') stop();
   if (e.key === 'h' || e.key === 'H') { const off = document.body.classList.toggle('no-panel'); prefs.set('noPanel', off ? 1 : 0); }
-  if (e.key === 'p' || e.key === 'P') setPresentMode(!presentMode);
-  if (e.key === 't' || e.key === 'T') setClickThrough(!throughOn);
   if (e.key === 'ArrowRight' || e.key === 'PageDown') { if (slides.urls.length) { e.preventDefault(); showSlide(slides.i + 1); } }
   if (e.key === 'ArrowLeft' || e.key === 'PageUp') { if (slides.urls.length) { e.preventDefault(); showSlide(slides.i - 1); } }
   if (e.key === '[' || e.key === ']') { const r = $('#rate'); r.value = Math.min(1.4, Math.max(0.6, rateMul() + (e.key === ']' ? .05 : -.05))).toFixed(2); r.dispatchEvent(new Event('input')); setStatus(`速さ ${Number(r.value).toFixed(2)}`); }
 });
-/* ---------- 発表モード：背景を透明にして、いちばん手前に出す ---------- */
-let presentMode = false, throughOn = false;
-function updateStageBackground() { // 発表モードか、スライド表示中は、舞台の背景を透かす
-  const clear = presentMode || slides.urls.length > 0;
+/* ---------- 舞台の背景：スライド表示中だけ透かす（透過ウィンドウは 2026-11-14 に本人が取りやめ） ---------- */
+function updateStageBackground() {
+  const clear = slides.urls.length > 0;
   scene.background = clear ? null : new THREE.Color(0x0d0b14);
   glow.visible = !clear;
 }
-async function setPresentMode(on) {
-  presentMode = on;
-  updateStageBackground();
-  document.body.classList.toggle('present', on);
-  $('#chkPresent').checked = on;
-  prefs.set('present', on ? 1 : 0);
-  if (tauriWindow) { try { await tauriWindow.setAlwaysOnTop(on); } catch (e) { report('最前面にできませんでした: ' + errText(e)); } }
-  setStatus(on ? '発表モード：背景が透明で、いちばん手前に出ます（P キーで戻せます）' : '通常モードに戻しました');
-}
-async function setClickThrough(on) {
-  throughOn = on;
-  $('#chkThrough').checked = on;
-  if (tauriWindow) { try { await tauriWindow.setIgnoreCursorEvents(on); } catch (e) { report('クリック透過にできませんでした: ' + errText(e)); } }
-  if (!on) setStatus('クリック透過：オフ');
-}
-$('#chkPresent').addEventListener('change', () => setPresentMode($('#chkPresent').checked));
-$('#chkThrough').addEventListener('change', () => setClickThrough($('#chkThrough').checked));
-if (prefs.get('present', '0') === '1') setPresentMode(true); // クリック透過は安全のため毎回オフから始める
 
 /* ---------- スライド表示：舞台の後ろにスライドを敷き、キャラクターがその手前で動く ---------- */
 const slides = { urls: [], names: [], i: 0 };

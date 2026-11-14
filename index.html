@@ -26,7 +26,7 @@
   </div>
 
   <!-- 操作系：発表の邪魔にならないよう、左下に小さく（右側は返事の一覧）。マウスを動かしたときだけ濃く見える -->
-  <div id="panel" class="panel" data-tauri-drag-region>
+  <div id="panel" class="panel">
     <textarea id="text" rows="3" placeholder="ミューズの返事を貼り付けて「読み上げ」">こんばんは、ずんだもんなのだ。今日は大澤さんと一緒に発表するのだ</textarea>
     <div class="row">
       <button id="btnSpeak" class="primary">読み上げ</button>
@@ -42,8 +42,6 @@
       <label class="chk" title="読み上げの速さ（[ と ] キーでも変えられます）">速さ <input type="range" id="rate" min="0.6" max="1.4" step="0.05" value="0.9"> <span id="rateVal">0.90</span></label>
       <label class="chk"><input type="checkbox" id="chkCaption" checked> 字幕</label>
       <label>動き <select id="motionMode"><option value="wander">おまかせ</option><option value="stay">その場</option><option value="off">なし</option></select></label>
-      <label class="chk" title="背景を透明にして、いちばん手前に出す（発表用）"><input type="checkbox" id="chkPresent"> 発表モード</label>
-      <label class="chk" title="舞台へのクリックを後ろの画面に通す（戻すときはアプリを選んで T キー）"><input type="checkbox" id="chkThrough"> クリック透過</label>
     </div>
     <div class="row">
       <label class="filebtn" title="スライド画像（PNG／JPG）を選ぶ。ファイル名の順に並ぶ">スライドを選ぶ<input type="file" id="slideFiles" accept="image/*" multiple hidden></label>
@@ -58,7 +56,7 @@
       <label class="chk" title="Muse.app の画面を2秒ごとに見て、新しい返事を取り込んで読み上げる（アクセシビリティの許可が要る）"><input type="checkbox" id="chkAutoGrab"> アプリから自動取り込み</label>
     </div>
     <div class="status-line"><span id="spinner" class="spinner"></span><div id="status" class="status">準備中…</div></div>
-    <div class="keys">Space 読み上げ ・ Esc 止める ・ F 全画面 ・ H パネルを隠す ・ ←→ スライド ・ P 発表モード ・ T クリック透過 ・ [ ] 速さ ・ ⌘Enter 読み上げ</div>
+    <div class="keys">Space 読み上げ ・ Esc 止める ・ F 全画面 ・ H パネルを隠す ・ ←→ スライド ・ [ ] 速さ ・ ⌘Enter 読み上げ ・ ⌘Q 終了</div>
   </div>
 
   <div id="loading" class="loading">ミューズを呼んでいます…</div>
