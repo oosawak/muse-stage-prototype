@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
+import { connect as mqttConnect } from 'mqtt';
 
 const $ = s => document.querySelector(s);
 const inTauri = '__TAURI_INTERNALS__' in window;
@@ -47,7 +48,7 @@ function frameCamera() {
   // 上半身を大きく：頭の高さを中心に、胸から上が入るように
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  const dist = w / h < 1 ? 2.6 : 1.9;
+  const dist = (w / h < 1 ? 2.6 : 1.9) * (modelH / 1.4); // 背の高いモデルほどカメラを引く（CC0モデルが近すぎた件）
   camera.position.set(0, headY - .05, dist); camera.lookAt(0, headY - .18, 0);
   camera.updateProjectionMatrix();
 }
@@ -549,6 +550,36 @@ function acceptReply(text, source) {
   if ($('#chkAuto').checked && !speaking) speak(text); // 「自動で読む」が入っていれば、そのまま読み上げる
 }
 if (hookListen) hookListen('hooked-reply', e => acceptReply(e.payload?.text, 'ウェブフック'));
+
+/* ---------- Web直送（MQTT中継）：公開ブローカー経由で即時に受け取る ---------- */
+// 舞台用チャット（MQTT用）のミューズが、合言葉の宛先へ返事を publish すると、ここへ数百msで届く。
+// 合言葉（トピック名）が実質の鍵。retain 付きで届く最新1件は、接続直後の基準決めで読み飛ばす。
+let mqttClient = null, relaySeq = -1, relayBase = false;
+function relayStop() { if (mqttClient) { try { mqttClient.end(true); } catch (e) { /* noop */ } mqttClient = null; } }
+function relayStart() {
+  relayStop(); relayBase = false; relaySeq = -1;
+  const key = ($('#relayTopic').value || '').trim();
+  if (!key) { setStatus('中継の合言葉が未入力です'); return; }
+  const topic = 'muse-stage/' + key + '/reply';
+  mqttClient = mqttConnect('wss://broker.emqx.io:8084/mqtt', { reconnectPeriod: 3000, connectTimeout: 15000 });
+  mqttClient.on('connect', () => { mqttClient.subscribe(topic, err => { if (!err) setStatus('中継に接続しました'); }); });
+  mqttClient.on('message', (t, payload) => {
+    try {
+      const d = JSON.parse(payload.toString());
+      const seq = typeof d.seq === 'number' ? d.seq : null;
+      if (!relayBase) { relayBase = true; relaySeq = seq ?? relaySeq; return; } // 最初の1件（retain）は基準だけ
+      if (seq !== null && seq === relaySeq) return;
+      if (seq !== null) relaySeq = seq;
+      acceptReply(String(d.text || ''), 'Web直送');
+    } catch (e) { /* 壊れたメッセージは捨てる */ }
+  });
+  mqttClient.on('error', () => { /* 再接続はライブラリが続ける */ });
+}
+$('#chkRelay').addEventListener('change', () => { prefs.set('relay', $('#chkRelay').checked ? 1 : 0); if ($('#chkRelay').checked) relayStart(); else { relayStop(); setStatus('中継を切りました'); } });
+$('#relayTopic').addEventListener('change', () => { prefs.set('relayTopic', $('#relayTopic').value.trim()); if ($('#chkRelay').checked) relayStart(); });
+$('#relayTopic').value = prefs.get('relayTopic', '');
+$('#chkRelay').checked = prefs.get('relay', '0') === '1';
+if ($('#chkRelay').checked) relayStart();
 
 /* ---------- ミューズ直送：配達ファイルの見張り ---------- */
 let lastInboxSeq = -1;

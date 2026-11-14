@@ -64,10 +64,12 @@ seq: 9
 - モデルの読み込み順（ずんだもん版）： `models/zundamon.vrm` → 無ければ試作用サンプル → 簡易人形
 
 ### Web版（CC0）
-- ずんだもんのモデルは再配布禁止なので公開できない。代わりに CC0 の Quaternius Base（`public/models/cc0.vrm`）を使った Web版を、oosawak.github.io の `materials/muse-stage/` に置く（アプリ版が正で、Web版はその派生）
+- ずんだもんのモデルは再配布禁止なので公開できない。代わりに CC0 の Quaternius Base（`public/models/cc0.vrm`）を使った Web版がある（アプリ版が正で、Web版はその派生）
+- **Web版の公開は本人の明示指示があるまでしない**（2026-11-14：一度 oosawak.github.io の `materials/muse-stage/` に置いたが、同日本人の指示で取り下げ済み。ページのタイトルやクレジットに「ずんだもん版」の名前が残っていたことも一因。名前やブランドをインターネットに出すときは、出す前に本人へ確認する）
 - Web版では、直送・AX・フックの受け口は使えない（Tauri の機能のため）。読み上げはブラウザ内蔵（speechSynthesis）。**VOICEVOX は https のページから http のローカルサーバーへ繋げない**（ブラウザの混在コンテンツ制限）ので Web版では使えない
 - CC0 モデルには表情（口パク・まばたき用のブレンドシェイプ）が無い。Web版は口が動かず、動き中心になる
-- Web版のビルド： `npx vite build --base './' --outDir <出力先>` で作り、出力一式を oosawak.github.io リポの `materials/muse-stage/` へコピーして commit・push する
+- Web版への返事の届け方は **公開MQTT中継**（2026-11-14 本人決定）。舞台用チャット（MQTT用、ずんだもん用とは別）が `tools/send_reply_mqtt.mjs` で broker.emqx.io の合言葉トピックへ publish し、ページが WSS で受けて即読み上げる。GitHub 経由は数十秒かかり本人が却下した。Cloudflare Worker 案はトークンに Workers 権限が無く未採用（`relay/` にコードだけ残置）
+- Web版のビルド： `npx vite build --base './' --outDir <出力先>`。公開先へ置くかどうかは上記のとおり本人の明示指示待ち
 
 ## Mac でのビルド手順（本人へ渡すときはこの順で）
 
@@ -88,3 +90,6 @@ npx tauri build --bundles app
 - `MOTIONS.md` — モーション素材の出典
 - `ZUNDAMON.md` — ずんだもん版の用途・制限・クレジットの根拠
 - `tools/muse-stage-hook.user.js` — フック版のユーザースクリプト（Tampermonkey 用）
+- `tools/send_reply_mqtt.mjs` — MQTT用の舞台用チャットが返事を中継へ送る道具（合言葉はリポ外のファイルから読む）
+- `INSTRUCTIONS_ZUNDAMON.md` — ずんだもん用の舞台用チャットへの指示書（保管）
+- `INSTRUCTIONS_MQTT.md` — MQTT用の舞台用チャットへの指示書
