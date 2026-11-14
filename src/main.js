@@ -144,6 +144,7 @@ const faceCamera = dt => { actor.rotation.y = turnToward(actor.rotation.y, 0, dt
 function toIdle(t) {
   director.target = null; director.pendingPeek = null;
   if (director.seq.length) { runStep(director.seq.shift()); return; } // 物語の続きがあれば、そちらへ
+  if (director.afterStory) { director.afterStory = false; t = Math.max(t, rand(7, 12)); } // 物語の後は、長めに休んでから次へ
   director.state = 'idle'; director.t = t;
 }
 function setMove(x, z, clip) {
@@ -197,27 +198,30 @@ function startStory() {
     [{ k: 'roll' }, { k: 'dance', t: 5 }, { k: 'move', x: 0, z: .3, clip: 'walk' }, { k: 'gesture', name: 'yes' }],
   ];
   director.seq = stories[Math.floor(Math.random() * stories.length)].slice();
+  director.afterStory = true;
   runStep(director.seq.shift());
 }
 function chooseNext() {
   const v = viewHalf(), cx = actor.position.x, cz = actor.position.z, r = Math.random();
-  if (r < .20) { // ちょこちょこ：近くの点へ歩く
+  if (r < .17) { // ちょこちょこ：近くの点へ歩く
     setMove(clamp(cx + rand(-1, 1) * .85, -v.halfW * .8, v.halfW * .8), clamp(cz + rand(-1, 1) * .5, -1.1, .5), 'walk');
-  } else if (r < .31) { // 奥へ走る／手前へ戻る
+  } else if (r < .25) { // 奥へ走る／手前へ戻る
     setMove(rand(-.6, .6), cz > -.5 ? -1.25 : rand(.1, .5), 'jog');
-  } else if (r < .43) { // 端に隠れて顔だけ出す
+  } else if (r < .35) { // 端に隠れて顔だけ出す
     goPeekSide(Math.random() < .5 ? -1 : 1);
-  } else if (r < .53) { // 下に隠れて顔だけ出す
+  } else if (r < .43) { // 下に隠れて顔だけ出す
     goPeekBottom();
-  } else if (r < .60) { // ぴょんぴょん跳ねる（2回）
+  } else if (r < .49) { // ぴょんぴょん跳ねる（2回）
     director.state = 'jump'; director.jumps = 2; playMotion('jump', .1);
-  } else if (r < .615) { // ころころ転がって移動する（回転が多く目が回るので、めったに出さない）
+  } else if (r < .505) { // ころころ転がって移動する（回転が多く目が回るので、めったに出さない）
     goRoll();
-  } else if (r < .765) { // 踊る（長く回らないよう短めに）
-    director.state = 'dance'; director.t = rand(4, 6.5);
-  } else if (r < .795) { // たまに首を振る（いやいや）
+  } else if (r < .62) { // 踊る（長く回らないよう短めに）
+    director.state = 'dance'; director.t = rand(4, 6);
+  } else if (r < .65) { // たまに首を振る（いやいや）
     startGesture('no');
-  } else toIdle(rand(3, 6));
+  } else if (r < .84) { // 休憩：立ったまま静かにしている（動く時間と休む時間のメリハリ。座る動きは本人が不要と言ったので使わない）
+    toIdle(rand(8, 15));
+  } else toIdle(rand(3, 5));
 }
 function directorUpdate(dt) {
   if (!vrm || !mixer || !actions.idle) return;
