@@ -488,7 +488,7 @@ $('#chkCaption').addEventListener('change', () => prefs.set('caption', $('#chkCa
 $('#chkAuto').addEventListener('change', () => prefs.set('auto', $('#chkAuto').checked ? 1 : 0));
 $('#chkAutoGrab').addEventListener('change', () => prefs.set('autoGrab', $('#chkAutoGrab').checked ? 1 : 0));
 $('#rate').value = prefs.get('rate', '0.9'); $('#rateVal').textContent = rateMul().toFixed(2);
-$('#engine').value = prefs.get('engine', 'voicevox'); // ずんだもん版の既定は VOICEVOX
+$('#engine').value = prefs.get('engine', inTauri ? 'voicevox' : 'web'); // アプリ版の既定は VOICEVOX、Web版はブラウザの読み上げ（https からはローカルの VOICEVOX に繋がらない）
 $('#chkCaption').checked = prefs.get('caption', '1') === '1';
 $('#chkAuto').checked = prefs.get('auto', '1') === '1'; // 直送モードの基本は「新しい投稿は喋る」。外したらクリックで喋る
 $('#motionMode').value = director.mode;
@@ -597,12 +597,24 @@ setInterval(async () => {
 /* ---------- 起動 ---------- */
 (async function boot() {
   frameCamera(); requestAnimationFrame(tick);
-  // ずんだもん版：公式モデル（public/models/zundamon.vrm、各自で入手して置く）があればそれを、無ければ試作用サンプルを表示
-  try { const name = await loadVRM('models/zundamon.vrm'); report(`VRM 読み込み: ${name}`); }
-  catch (e1) {
-    try { const name = await loadVRM('models/VRM1_Constraint_Twist_Sample.vrm'); report(`VRM 読み込み: ${name}`); setStatus('ずんだもんのモデル（public/models/zundamon.vrm）が無いので、試作用サンプルで表示しています'); }
-    catch (e) { buildPlaceholder(); frameCamera(); report('VRM を読めないので簡易な人形で表示: ' + e.message); }
+  // モデルの候補：アプリ版はないずんだもん公式モデル（各自で置く）、Web版は再配布できる CC0 モデル。?model= で差し替えもできる
+  const qsModel = new URLSearchParams(location.search).get('model');
+  const cands = [];
+  if (qsModel) cands.push({ url: qsModel, credit: '' });
+  if (inTauri) cands.push({ url: 'models/zundamon.vrm' });
+  else cands.push({ url: 'models/cc0.vrm', credit: 'キャラクター: Quaternius Base（CC0）<br>モーション: Quaternius／KayKit（CC0）を open-vrma が変換' });
+  cands.push({ url: 'models/VRM1_Constraint_Twist_Sample.vrm', credit: '', note: '試作用サンプルで表示しています' });
+  let loaded = false;
+  for (const c of cands) {
+    try {
+      const name = await loadVRM(c.url);
+      report(`VRM 読み込み: ${name}`);
+      if (c.credit !== undefined) $('#credit').innerHTML = c.credit || `キャラクター: ${name}`;
+      if (c.note) setStatus(c.note);
+      loaded = true; break;
+    } catch (e) { /* 次の候補へ */ }
   }
+  if (!loaded) { buildPlaceholder(); frameCamera(); report('VRM を読めないので簡易な人形で表示'); }
   $('#loading').classList.add('hide');
   // 声の一覧（say 用）
   let voices = [];

@@ -63,6 +63,12 @@ seq: 9
 - リポの公開範囲（public／private）は本人の判断待ち。勝手に変えない
 - モデルの読み込み順（ずんだもん版）： `models/zundamon.vrm` → 無ければ試作用サンプル → 簡易人形
 
+### Web版（CC0）
+- ずんだもんのモデルは再配布禁止なので公開できない。代わりに CC0 の Quaternius Base（`public/models/cc0.vrm`）を使った Web版を、oosawak.github.io の `materials/muse-stage/` に置く（アプリ版が正で、Web版はその派生）
+- Web版では、直送・AX・フックの受け口は使えない（Tauri の機能のため）。読み上げはブラウザ内蔵（speechSynthesis）。**VOICEVOX は https のページから http のローカルサーバーへ繋げない**（ブラウザの混在コンテンツ制限）ので Web版では使えない
+- CC0 モデルには表情（口パク・まばたき用のブレンドシェイプ）が無い。Web版は口が動かず、動き中心になる
+- Web版のビルド： `npx vite build --base './' --outDir <出力先>` で作り、出力一式を oosawak.github.io リポの `materials/muse-stage/` へコピーして commit・push する
+
 ## Mac でのビルド手順（本人へ渡すときはこの順で）
 
 ```bash
