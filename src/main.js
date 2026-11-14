@@ -124,6 +124,48 @@ function speakWeb(text) {
     ss.speak(u);
   });
 }
+/* ---------- VOICEVOX（ずんだもん）で読み上げ ---------- */
+// VOICEVOX は同じマシンで動く音声合成エンジン（http://127.0.0.1:50021）に文章を渡すと WAV が返る。
+// ずんだもんの「ノーマル」のスタイル ID は通常 3。起動していれば /speakers から正確に引き直す
+const VV_BASE = 'http://127.0.0.1:50021';
+let vvSpeakerId = null, vvAudio = null, vvUrl = null;
+async function zundamonSpeakerId() {
+  if (vvSpeakerId !== null) return vvSpeakerId;
+  try {
+    const speakers = await (await fetch(VV_BASE + '/speakers')).json();
+    const z = speakers.find(s => (s.name || '').includes('ずんだもん'));
+    const st = z?.styles?.find(s => s.name === 'ノーマル') || z?.styles?.[0];
+    if (st) { vvSpeakerId = st.id; return vvSpeakerId; }
+  } catch (e) { /* 引けなければ既定の 3 を使う */ }
+  vvSpeakerId = 3; return vvSpeakerId;
+}
+async function speakVoicevox(text) {
+  let speaker;
+  try { speaker = await zundamonSpeakerId(); }
+  catch (e) { throw new Error('VOICEVOX に接続できません'); }
+  let query;
+  try {
+    const r = await fetch(`${VV_BASE}/audio_query?speaker=${speaker}&` + new URLSearchParams({ text }), { method: 'POST' });
+    if (!r.ok) throw new Error('audio_query ' + r.status);
+    query = await r.json();
+  } catch (e) { throw new Error('VOICEVOX が起動していないようです（アプリを起動してから試してください）'); }
+  query.speedScale = rateMul(); // 速さのつまみを VOICEVOX の速度に渡す
+  const r2 = await fetch(`${VV_BASE}/synthesis?speaker=${speaker}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(query) });
+  if (!r2.ok) throw new Error('VOICEVOX の合成に失敗しました（' + r2.status + '）');
+  const wav = await r2.blob();
+  stopVoicevox();
+  vvUrl = URL.createObjectURL(wav);
+  return new Promise((resolve, reject) => {
+    const a = new Audio(vvUrl); vvAudio = a; speaking = true;
+    a.onended = () => { speaking = false; if (vvAudio === a) vvAudio = null; resolve('voicevox'); };
+    a.onerror = () => { speaking = false; reject(new Error('音声を再生できませんでした')); };
+    a.play().catch(err => { speaking = false; reject(err); });
+  });
+}
+function stopVoicevox() {
+  if (vvAudio) { try { vvAudio.pause(); } catch (e) {} vvAudio = null; }
+  if (vvUrl) { URL.revokeObjectURL(vvUrl); vvUrl = null; }
+}
 async function speakSay(text) {
   if (!inTauri) throw new Error('say は Tauri アプリの中でだけ使えます');
   speaking = true;
@@ -137,7 +179,8 @@ async function speak(text) {
   $('#btnSpeak').disabled = true;
   try {
     let used;
-    if (mode === 'web' || (mode === 'auto' && webOk !== false)) {
+    if (mode === 'voicevox') used = await speakVoicevox(text);
+    else if (mode === 'web' || (mode === 'auto' && webOk !== false)) {
       try { used = await speakWeb(text); webOk = true; }
       catch (e) {
         report(`speechSynthesis: 使えません（${e.message}）`);
@@ -146,7 +189,7 @@ async function speak(text) {
         used = await speakSay(text);
       }
     } else used = await speakSay(text);
-    setStatus(used === 'web' ? '読み上げ：WebView の speechSynthesis' : used === 'say' ? `読み上げ：macOS の say（${$('#voice').value || 'Kyoko'}）` : '止めました');
+    setStatus(used === 'voicevox' ? '読み上げ：VOICEVOX（ずんだもん）' : used === 'web' ? '読み上げ：WebView の speechSynthesis' : used === 'say' ? `読み上げ：macOS の say（${$('#voice').value || 'Kyoko'}）` : '止めました');
     report(`読み上げ完了: ${used}`);
     return used;
   } catch (e) { setStatus('読み上げられませんでした：' + errText(e)); report('読み上げ失敗: ' + errText(e)); }
@@ -154,6 +197,7 @@ async function speak(text) {
 }
 function stop() {
   speaking = false;
+  stopVoicevox();
   try { window.speechSynthesis?.cancel(); } catch (e) {}
   if (inTauri) invoke('stop_say').catch(() => {});
 }
@@ -195,7 +239,7 @@ $('#voice').addEventListener('change', () => prefs.set('voice', $('#voice').valu
 $('#engine').addEventListener('change', () => prefs.set('engine', $('#engine').value));
 $('#chkCaption').addEventListener('change', () => prefs.set('caption', $('#chkCaption').checked ? 1 : 0));
 $('#rate').value = prefs.get('rate', '0.9'); $('#rateVal').textContent = rateMul().toFixed(2);
-$('#engine').value = prefs.get('engine', 'auto');
+$('#engine').value = prefs.get('engine', 'voicevox'); // ずんだもん版の既定は VOICEVOX
 $('#chkCaption').checked = prefs.get('caption', '1') === '1';
 if (prefs.get('noPanel', '0') === '1') document.body.classList.add('no-panel');
 // マウスを動かしたときだけ、操作パネルを濃く見せる
@@ -273,8 +317,12 @@ setInterval(async () => {
 /* ---------- 起動 ---------- */
 (async function boot() {
   frameCamera(); requestAnimationFrame(tick);
-  try { const name = await loadVRM('models/VRM1_Constraint_Twist_Sample.vrm'); report(`VRM 読み込み: ${name}`); }
-  catch (e) { buildPlaceholder(); frameCamera(); report('VRM を読めないので簡易な人形で表示: ' + e.message); }
+  // ずんだもん版：公式モデル（public/models/zundamon.vrm、各自で入手して置く）があればそれを、無ければ試作用サンプルを表示
+  try { const name = await loadVRM('models/zundamon.vrm'); report(`VRM 読み込み: ${name}`); }
+  catch (e1) {
+    try { const name = await loadVRM('models/VRM1_Constraint_Twist_Sample.vrm'); report(`VRM 読み込み: ${name}`); setStatus('ずんだもんのモデル（public/models/zundamon.vrm）が無いので、試作用サンプルで表示しています'); }
+    catch (e) { buildPlaceholder(); frameCamera(); report('VRM を読めないので簡易な人形で表示: ' + e.message); }
+  }
   $('#loading').classList.add('hide');
   // 声の一覧（say 用）
   let voices = [];

@@ -3,12 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Muse Stage</title>
+<title>Muse Stage（ずんだもん版）</title>
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
   <!-- 舞台：VRM のミューズを大きく表示する -->
   <div id="stage"></div>
+
+  <!-- クレジット：利用条件に基づき左上に常時表示する（パネルを隠しても消えない） -->
+  <div id="credit" class="credit">音声: VOICEVOX:ずんだもん<br>キャラクター: ずんだもん（東北ずん子・ずんだもんプロジェクト）</div>
 
   <!-- 読み上げ中の字幕（プロジェクターで読める大きさ） -->
   <div id="caption" class="caption"></div>
@@ -21,12 +24,13 @@
 
   <!-- 操作系：発表の邪魔にならないよう、左下に小さく（右側は返事の一覧）。マウスを動かしたときだけ濃く見える -->
   <div id="panel" class="panel">
-    <textarea id="text" rows="3" placeholder="ミューズの返事を貼り付けて「読み上げ」">こんばんは、ミューズです。今日は大澤さんと一緒に発表します</textarea>
+    <textarea id="text" rows="3" placeholder="ミューズの返事を貼り付けて「読み上げ」">こんばんは、ずんだもんなのだ。今日は大澤さんと一緒に発表するのだ</textarea>
     <div class="row">
       <button id="btnSpeak" class="primary">読み上げ</button>
       <button id="btnStop">止める</button>
       <button id="btnFull" title="全画面（F キー）">全画面</button>
       <select id="engine" title="読み上げのしくみ">
+        <option value="voicevox">VOICEVOX（ずんだもん）</option>
         <option value="auto">自動</option>
         <option value="web">WebView の speechSynthesis</option>
         <option value="say">macOS の say</option>
