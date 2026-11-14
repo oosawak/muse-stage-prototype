@@ -11,8 +11,8 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 .caption.on { opacity: 1; }
 .caption .done { color: #fff; } .caption .rest { color: rgba(255,255,255,.55); }
 
-/* 操作パネル：右下に小さく。ふだんは薄く、マウスを動かすと濃く */
-.panel { position: fixed; right: 12px; bottom: 12px; width: min(460px, 92vw); padding: 8px; border-radius: 12px;
+/* 操作パネル：左下に小さく（右側は返事の一覧に空ける）。ふだんは薄く、マウスを動かすと濃く */
+.panel { position: fixed; left: 12px; bottom: 12px; width: min(460px, 92vw); padding: 8px; border-radius: 12px;
   background: rgba(20,16,30,.78); border: 1px solid var(--line); backdrop-filter: blur(6px);
   opacity: .18; transition: opacity .3s; font-size: 12px; }
 .panel:hover, .panel:focus-within, body.awake .panel { opacity: 1; }
