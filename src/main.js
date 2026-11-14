@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
-import { connect as mqttConnect } from 'mqtt';
+import mqtt from 'mqtt';
 
 const $ = s => document.querySelector(s);
 const inTauri = '__TAURI_INTERNALS__' in window;
@@ -561,7 +561,7 @@ function relayStart() {
   const key = ($('#relayTopic').value || '').trim();
   if (!key) { setStatus('中継の合言葉が未入力です'); return; }
   const topic = 'muse-stage/' + key + '/reply';
-  mqttClient = mqttConnect('wss://broker.emqx.io:8084/mqtt', { reconnectPeriod: 3000, connectTimeout: 15000 });
+  mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', { reconnectPeriod: 3000, connectTimeout: 15000 });
   mqttClient.on('connect', () => { mqttClient.subscribe(topic, err => { if (!err) setStatus('中継に接続しました'); }); });
   mqttClient.on('message', (t, payload) => {
     try {
