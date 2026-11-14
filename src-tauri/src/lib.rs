@@ -69,22 +69,24 @@ struct ChatMsg { role: String, text: String }
 ///   接頭辞が無い（ユーザーの発言だけ先頭に「自分:」の断片が付く）。接頭辞だけを探すと最新の返事を逃す。
 /// - 画面に見えている範囲しかツリーに載らない。一番下までスクロールすると新しい返事が載ってくる。
 /// そのため、要素の経路（パス）も一緒に集め、会話リストの子ごとにメッセージを組み立て直す。
+/// 速さのため、まず会話リストの置き場所へ直行してその中だけをたどり、場所が違えば全窓の幅優先に落とす。
 /// 返り値：会話のメッセージ一覧（古い順）。読めないときはエラーの文を返す
 #[tauri::command]
 async fn read_muse(app: String) -> Result<Vec<ChatMsg>, String> {
   let app = if app.is_empty() { "Muse".to_string() } else { app };
-  let script = format!(r#"
-set texts to {{}}
-set visited to 0
-tell application "System Events"
-  if not (exists process "{app}") then error "{app} が起動していません"
-  tell process "{app}"
-    set frontier to {{front window}}
-    set fpaths to {{""}}
+  // まず会話リストの置き場所（窓から /1/1/1/1/1/1/1/3/5、実機で安定）へ直行し、その中だけをたどる。
+  // 全窓をたどるより要素数が半分以下になり、取り込みが速くなる。場所が違っていたら全窓の幅優先に落とす
+  let script = r#"
+on collectTexts(rootEl, rootPath, maxDepth)
+  set texts to {}
+  set visited to 0
+  tell application "System Events"
+    set frontier to {rootEl}
+    set fpaths to {rootPath}
     set depth to 0
-    repeat while (count of frontier) > 0 and depth < 24 and visited < 9000
-      set nextFrontier to {{}}
-      set nextPaths to {{}}
+    repeat while (count of frontier) > 0 and depth < maxDepth and visited < 9000
+      set nextFrontier to {}
+      set nextPaths to {}
       repeat with fi from 1 to count of frontier
         set el to item fi of frontier
         set p to item fi of fpaths
@@ -115,10 +117,46 @@ tell application "System Events"
       set depth to depth + 1
     end repeat
   end tell
+  return texts
+end collectTexts
+
+set resultTexts to {}
+set directOk to false
+set directTarget to missing value
+tell application "System Events"
+  if not (exists process "__APP__") then error "__APP__ が起動していません"
+  tell process "__APP__"
+    set win to front window
+    try
+      set t to win
+      repeat with idx in {1, 1, 1, 1, 1, 1, 1, 3, 5}
+        set t to UI element (idx as integer) of t
+      end repeat
+      set hit to 0
+      try
+        set vs to (value of every UI element of t) as list
+        repeat with v in vs
+          try
+            set s to v as text
+            if s starts with "ユーザーメッセージ:" or s starts with "アシスタントメッセージ:" then set hit to hit + 1
+          end try
+        end repeat
+      end try
+      if hit >= 2 then
+        set directOk to true
+        set directTarget to t
+      end if
+    end try
+  end tell
 end tell
+if directOk then
+  set resultTexts to collectTexts(directTarget, "/1/1/1/1/1/1/1/3/5", 14)
+else
+  set resultTexts to collectTexts(win, "", 24)
+end if
 set AppleScript's text item delimiters to (ASCII character 30)
-return texts as text
-"#);
+return resultTexts as text
+"#.replace("__APP__", &app);
   let out = Command::new("/usr/bin/osascript").args(["-e", &script]).output().map_err(|e| e.to_string())?;
   if !out.status.success() { return Err(String::from_utf8_lossy(&out.stderr).trim().to_string()); }
   let recs: Vec<(Vec<u32>, String)> = String::from_utf8_lossy(&out.stdout).trim_end_matches('\n')
