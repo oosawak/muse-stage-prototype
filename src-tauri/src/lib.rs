@@ -173,16 +173,25 @@ return resultTexts as text
 /// 集めた（経路, 文字）から会話のメッセージを組み立てる
 fn build_messages(recs: &[(Vec<u32>, String)]) -> Vec<ChatMsg> {
   use std::collections::BTreeMap;
-  // 接頭辞つきの値を直接の子に持つ要素＝会話リスト。いちばん多く持つものを採る
-  let mut score: BTreeMap<Vec<u32>, usize> = BTreeMap::new();
+  // 会話リストの候補を集める。目印は2種類：接頭辞つきメッセージの親と、
+  // バラバラなユーザ発言の先頭断片「自分:」の2つ上の要素（＝リスト）。
+  // 生まれたばかりの短い会話では接頭辞つきが1つも無いことがあるため、接頭辞の数では決めない。
+  // 候補のうち、直接の子（メッセージ）がいちばん多いものを会話リストとする
+  let mut candidates: Vec<Vec<u32>> = vec![];
   for (p, v) in recs {
     if v.starts_with("ユーザーメッセージ:") || v.starts_with("アシスタントメッセージ:") {
-      if let Some((_, parent)) = p.split_last() { *score.entry(parent.to_vec()).or_default() += 1; }
+      if let Some((_, parent)) = p.split_last() { candidates.push(parent.to_vec()); }
     }
+    if v.trim() == "自分:" && p.len() >= 2 { candidates.push(p[..p.len() - 2].to_vec()); }
   }
   let mut best: Option<(Vec<u32>, usize)> = None;
-  for (p, s) in &score { if best.as_ref().map_or(true, |(_, bs)| *s > *bs) { best = Some((p.clone(), *s)); } }
-  let list_parent = best.filter(|(_, s)| *s >= 2).map(|(p, _)| p);
+  for lp in candidates {
+    let mut children = std::collections::BTreeSet::new();
+    for (p, _) in recs { if p.len() > lp.len() && p[..lp.len()] == lp[..] { children.insert(p[lp.len()]); } }
+    let n = children.len();
+    if n >= 2 && best.as_ref().map_or(true, |(_, bn)| n > *bn) { best = Some((lp, n)); }
+  }
+  let list_parent = best.map(|(p, _)| p);
   let Some(lp) = list_parent else {
     // 会話リストが特定できないときは、接頭辞つきだけを拾う（従来の動き）
     let mut out = vec![];
