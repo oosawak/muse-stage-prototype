@@ -22,7 +22,7 @@
         "fullscreen": false,
         "backgroundColor": "#00000000",
         "transparent": true,
-        "decorations": false
+        "decorations": true
       }
     ],
     "security": {
