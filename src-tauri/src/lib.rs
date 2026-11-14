@@ -57,28 +57,52 @@ fn ja_voices() -> Vec<String> {
 }
 
 /// 第2段の実験：Mac版ミューズアプリ（Muse.app）の窓に出ている文字を、アクセシビリティ経由で読む。
-/// System Events に「窓の中の文字（static text）の値」を聞く。muse-stage にアクセシビリティの許可が要る。
-/// 返り値：読めた文字の一覧（画面の上から順）。許可がないなどで読めないときはエラーの文を返す
+/// muse-stage にアクセシビリティの許可が要る（子プロセスの osascript への許可も必要な場合がある）。
+/// 注意：Muse アプリでは `entire contents` が常に 0 件を返す（2026-11-14 実機で確認）。
+/// そのため子要素（UI elements）をレベルごとにまとめて聞く幅優先でたどり、AXStaticText の値を集める。
+/// 会話メッセージは「ユーザーメッセージ: 」「アシスタントメッセージ: 」の接頭辞つきで入っている。
+/// 返り値：読めた文字の一覧（浅い階層から順、同階層では画面の並び順）。読めないときはエラーの文を返す
 #[tauri::command]
 async fn read_muse(app: String) -> Result<Vec<String>, String> {
   let app = if app.is_empty() { "Muse".to_string() } else { app };
   let script = format!(r#"
+set texts to {{}}
+set visited to 0
 tell application "System Events"
   if not (exists process "{app}") then error "{app} が起動していません"
   tell process "{app}"
-    set out to {{}}
-    repeat with el in (entire contents of front window)
-      try
-        if role of el is "AXStaticText" then
-          set v to value of el
-          if v is not missing value and v is not "" then set end of out to v
-        end if
-      end try
+    set frontier to {{front window}}
+    set depth to 0
+    repeat while (count of frontier) > 0 and depth < 20 and visited < 6000
+      set nextFrontier to {{}}
+      repeat with el in frontier
+        try
+          set kids to (UI elements of el) as list
+          if (count of kids) > 0 then
+            set rs to (role of every UI element of el) as list
+            set vs to (value of every UI element of el) as list
+            repeat with i from 1 to count of kids
+              set visited to visited + 1
+              if (item i of rs as text) is "AXStaticText" then
+                set v to ""
+                try
+                  set v to item i of vs as text
+                end try
+                if v is not "" and v is not "missing value" then set end of texts to v
+              end if
+              set end of nextFrontier to item i of kids
+            end repeat
+          end if
+        end try
+        if visited >= 6000 then exit repeat
+      end repeat
+      set frontier to nextFrontier
+      set depth to depth + 1
     end repeat
   end tell
 end tell
 set AppleScript's text item delimiters to (ASCII character 30)
-return out as text
+return texts as text
 "#);
   let out = Command::new("/usr/bin/osascript").args(["-e", &script]).output().map_err(|e| e.to_string())?;
   if !out.status.success() { return Err(String::from_utf8_lossy(&out.stderr).trim().to_string()); }

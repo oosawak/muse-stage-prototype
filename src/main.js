@@ -208,8 +208,12 @@ addEventListener('drop', async e => {
 });
 
 /* ---------- 第2段：Muse.app の返事をアクセシビリティで取り込む（実験） ---------- */
-// 画面の文字のうち、いちばん下（新しい）にある長めの文を「最新の返事」とみなす
+// Muse アプリの会話メッセージは「アシスタントメッセージ: 本文」の形で取れる（2026-11-14 実機で確認）。
+// 同じ階層では並び順＝新しさの順なので、接頭辞つきの最後のものを最新の返事とし、接頭辞を外して返す。
+// 接頭辞つきが無いときは、従来どおり長めの文の最後のものを返す
 function pickLatestReply(texts) {
+  const mine = texts.filter(t => t.trim().startsWith('アシスタントメッセージ:'));
+  if (mine.length) return mine[mine.length - 1].trim().replace(/^アシスタントメッセージ:\s*/, '');
   const long = texts.filter(t => t.trim().length >= 6);
   return (long[long.length - 1] || texts[texts.length - 1] || '').trim();
 }
