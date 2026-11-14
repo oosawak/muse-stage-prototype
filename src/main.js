@@ -218,6 +218,14 @@ function directorUpdate(dt) {
   if (!vrm || !mixer || !actions.idle) return;
   if (director.mode === 'off') { stopMotion(); return; }
   if (director.mode === 'stay') { playMotion(speaking ? 'talk' : 'idle'); faceCamera(dt); return; }
+  // 話している間は、おまかせ演出（歩く・踊る・隠れる等）を止めて、その場で正面を向いて喋る（2026-11-14 本人要望）
+  if (speaking) {
+    if (director.state !== 'idle') { director.state = 'idle'; director.t = 2; }
+    director.seq = []; director.pendingPeek = null; director.target = null; director.quiet = 0;
+    actor.position.y += (0 - actor.position.y) * Math.min(1, dt * 4); // 下に隠れている途中なら、立ち位置に戻る
+    playMotion('talk'); faceCamera(dt);
+    return;
+  }
   director.t -= dt;
   switch (director.state) {
     case 'idle':
