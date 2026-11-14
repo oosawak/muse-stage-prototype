@@ -45,11 +45,11 @@ let vrm = null, placeholder = null, headY = 1.4;
 const actor = new THREE.Group(); scene.add(actor); // モデルを載せる台。うろうろ・かくれんぼは、この台ごと動かす
 let modelH = 1.4, modelW = .5;
 function frameCamera() {
-  // 上半身を大きく：頭の高さを中心に、胸から上が入るように
+  // 全身がほぼ入る距離感（近すぎるという本人の指摘で、上半身寄りから引いた構図へ。2026-11-15）
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  const dist = (w / h < 1 ? 2.6 : 1.9) * (modelH / 1.4); // 背の高いモデルほどカメラを引く（CC0モデルが近すぎた件）
-  camera.position.set(0, headY - .05, dist); camera.lookAt(0, headY - .18, 0);
+  const dist = (w / h < 1 ? 3.2 : 2.5) * modelH; // 背の高いモデルほどカメラを引く
+  camera.position.set(0, headY - modelH * .24, dist); camera.lookAt(0, headY - modelH * .32, 0);
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', frameCamera);
@@ -126,7 +126,7 @@ try { director.mode = prefs.get('motion', 'wander'); } catch (e) {}
 function viewHalf() {
   const dist = camera.position.z;
   const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * dist;
-  return { halfH, halfW: halfH * camera.aspect, dist, camY: camera.position.y, centerY: headY - .18 };
+  return { halfH, halfW: halfH * camera.aspect, dist, camY: camera.position.y, centerY: headY - modelH * .32 };
 }
 function halfAt(z) { // 奥行き z の位置で見える範囲（カメラからの距離で縮む）
   const v = viewHalf(); const s = (v.dist - z) / v.dist;
