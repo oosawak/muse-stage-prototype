@@ -240,10 +240,12 @@ $('#voice').addEventListener('change', () => prefs.set('voice', $('#voice').valu
 $('#engine').addEventListener('change', () => prefs.set('engine', $('#engine').value));
 $('#chkCaption').addEventListener('change', () => prefs.set('caption', $('#chkCaption').checked ? 1 : 0));
 $('#chkAuto').addEventListener('change', () => prefs.set('auto', $('#chkAuto').checked ? 1 : 0));
+$('#chkAutoGrab').addEventListener('change', () => prefs.set('autoGrab', $('#chkAutoGrab').checked ? 1 : 0));
 $('#rate').value = prefs.get('rate', '0.9'); $('#rateVal').textContent = rateMul().toFixed(2);
 $('#engine').value = prefs.get('engine', 'voicevox'); // ずんだもん版の既定は VOICEVOX
 $('#chkCaption').checked = prefs.get('caption', '1') === '1';
 $('#chkAuto').checked = prefs.get('auto', '0') === '1';
+$('#chkAutoGrab').checked = prefs.get('autoGrab', '0') === '1';
 if (prefs.get('noPanel', '0') === '1') document.body.classList.add('no-panel');
 // マウスを動かしたときだけ、操作パネルを濃く見せる
 let awakeT = 0; addEventListener('mousemove', () => { document.body.classList.add('awake'); clearTimeout(awakeT); awakeT = setTimeout(() => document.body.classList.remove('awake'), 2500); });
@@ -329,16 +331,17 @@ $('#btnGrab').onclick = async () => {
   try { const { msgs, replies, latest } = await grabMuse(true); $('#text').value = latest; setStatus(`Muse.app から取り込みました（返事 ${replies.length} 件・会話 ${msgs.length} 件。右の一覧からも選べます）`); }
   catch (e) { setStatus('取り込めませんでした：' + errText(e) + '（システム設定 → プライバシーとセキュリティ → アクセシビリティ で Muse Stage を許可）'); report('取り込み失敗: ' + errText(e)); }
 };
-// 自動：2 秒ごとに見て、新しい返事が出たら読み上げる（読み上げ中は待つ）
+// 自動取り込み（アクセシビリティ版）：2 秒ごとに Muse.app を見て、新しい返事が出たら読み上げる。
+// 直送・フックの自動読み上げ（chkAuto）とは別のスイッチ。直送だけ使うときは、こちらは切ったままでよい
 let lastAuto = null, autoBusy = false;
 setInterval(async () => {
-  if (!$('#chkAuto').checked || autoBusy || speaking) return;
+  if (!$('#chkAutoGrab').checked || autoBusy || speaking) return;
   autoBusy = true;
   try {
     const { latest } = await grabMuse();
     if (lastAuto === null) lastAuto = latest; // 付けた時点の返事は読まない
     else if (latest && latest !== lastAuto) { lastAuto = latest; $('#text').value = latest; await speak(latest); }
-  } catch (e) { $('#chkAuto').checked = false; setStatus('自動で読めないので止めました：' + errText(e)); }
+  } catch (e) { $('#chkAutoGrab').checked = false; prefs.set('autoGrab', 0); setStatus('自動取り込みを止めました：' + errText(e)); }
   finally { autoBusy = false; }
 }, 2000);
 
