@@ -212,19 +212,54 @@ addEventListener('drop', async e => {
 // 同じ階層では並び順＝新しさの順なので、接頭辞つきの最後のものを最新の返事とし、接頭辞を外して返す。
 // 接頭辞つきが無いときは、従来どおり長めの文の最後のものを返す
 function pickLatestReply(texts) {
-  const mine = texts.filter(t => t.trim().startsWith('アシスタントメッセージ:'));
-  if (mine.length) return mine[mine.length - 1].trim().replace(/^アシスタントメッセージ:\s*/, '');
+  const mine = assistantReplies(texts);
+  if (mine.length) return mine[mine.length - 1];
   const long = texts.filter(t => t.trim().length >= 6);
   return (long[long.length - 1] || texts[texts.length - 1] || '').trim();
+}
+// 接頭辞つきのアシスタント返事だけを、接頭辞を外して古い順に取り出す（重複は1つにまとめる）
+function assistantReplies(texts) {
+  const out = [];
+  for (const t of texts) {
+    const s = t.trim();
+    if (s.startsWith('アシスタントメッセージ:')) {
+      const body = s.replace(/^アシスタントメッセージ:\s*/, '');
+      if (body && !out.includes(body)) out.push(body);
+    }
+  }
+  return out;
+}
+// 取り込んだ返事を右側の一覧に出す。自動で選んだ「最新」が実際とずれていても、ここで選び直せる。
+// 項目を選ぶと、その返事を欄に入れて読み上げる
+function renderReplies(replies) {
+  const list = $('#replyList');
+  list.innerHTML = '';
+  $('#repliesCount').textContent = replies.length ? `${replies.length} 件` : '';
+  $('#replies').classList.toggle('show', replies.length > 0);
+  [...replies].reverse().forEach((body, i) => {
+    const b = document.createElement('button');
+    b.className = 'reply-item';
+    b.textContent = body.replace(/\s+/g, ' ').slice(0, 70);
+    b.title = body.slice(0, 300);
+    b.onclick = () => {
+      list.querySelectorAll('.reply-item').forEach(el => el.classList.remove('playing'));
+      b.classList.add('playing');
+      $('#text').value = body;
+      speak(body);
+    };
+    list.appendChild(b);
+  });
 }
 async function grabMuse() {
   if (!inTauri) throw new Error('アプリの中でだけ使えます');
   const texts = await invoke('read_muse', { app: 'Muse' });
   report(`Muse.app から ${texts.length} 個の文字を読めました`);
-  return { texts, latest: pickLatestReply(texts) };
+  const replies = assistantReplies(texts);
+  renderReplies(replies);
+  return { texts, replies, latest: pickLatestReply(texts) };
 }
 $('#btnGrab').onclick = async () => {
-  try { const { texts, latest } = await grabMuse(); $('#text').value = latest; setStatus(`Muse.app から取り込みました（画面の文字 ${texts.length} 個のうち、いちばん新しいもの）`); }
+  try { const { texts, replies, latest } = await grabMuse(); $('#text').value = latest; setStatus(`Muse.app から取り込みました（返事 ${replies.length} 件・画面の文字 ${texts.length} 個。右の一覧からも選べます）`); }
   catch (e) { setStatus('取り込めませんでした：' + errText(e) + '（システム設定 → プライバシーとセキュリティ → アクセシビリティ で Muse Stage を許可）'); report('取り込み失敗: ' + errText(e)); }
 };
 // 自動：2 秒ごとに見て、新しい返事が出たら読み上げる（読み上げ中は待つ）

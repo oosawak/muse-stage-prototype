@@ -13,6 +13,12 @@
   <!-- 読み上げ中の字幕（プロジェクターで読める大きさ） -->
   <div id="caption" class="caption"></div>
 
+  <!-- 取り込んだ返事の一覧：右側に出し、選ぶとその返事を読み上げる -->
+  <div id="replies" class="replies">
+    <div class="replies-head">取り込んだ返事 <span id="repliesCount"></span></div>
+    <div id="replyList" class="reply-list"></div>
+  </div>
+
   <!-- 操作系：発表の邪魔にならないよう、右下に小さく。マウスを動かしたときだけ濃く見える -->
   <div id="panel" class="panel">
     <textarea id="text" rows="3" placeholder="ミューズの返事を貼り付けて「読み上げ」">こんばんは、ミューズです。今日は大澤さんと一緒に発表します</textarea>
