@@ -247,17 +247,42 @@ fn is_time_only(s: &str) -> bool {
   s.len() <= 5 && s.matches(':').count() == 1 && s.chars().all(|c| c.is_ascii_digit() || c == ':')
 }
 
-/// ミューズ直送：配達ファイル（~/muse-stage-inbox.json）を読む。
-/// 舞台用チャットのミューズが、返事のたびに {"seq": 番号, "text": "返事"} を書き込む。画面側が見張って取り込む
+/// ミューズ直送：配達ファイルを読む。本命は Markdown 形式（~/muse-stage-inbox.md）で、
+/// 先頭に front matter（seq）＋本文＝返事の文。舞台用チャットのミューズが返事のたびに書き込む。
+/// 旧 JSON 形式（~/muse-stage-inbox.json）が残っていれば、そちらも読める
 #[tauri::command]
 fn read_inbox() -> Option<(u64, String)> {
-  let path = std::env::home_dir()?.join("muse-stage-inbox.json");
-  let data = std::fs::read_to_string(path).ok()?;
+  let home = std::env::home_dir()?;
+  if let Ok(data) = std::fs::read_to_string(home.join("muse-stage-inbox.md")) {
+    if let Some(r) = parse_inbox_md(&data) { return Some(r); }
+  }
+  let data = std::fs::read_to_string(home.join("muse-stage-inbox.json")).ok()?;
   let v: serde_json::Value = serde_json::from_str(&data).ok()?;
   let seq = v.get("seq")?.as_u64()?;
   let text = v.get("text")?.as_str()?.trim().to_string();
   if text.is_empty() { return None; }
   Some((seq, text))
+}
+
+fn parse_inbox_md(data: &str) -> Option<(u64, String)> {
+  let data = data.trim_start_matches('\u{feff}');
+  if let Some(rest) = data.strip_prefix("---") {
+    let end = rest.find("\n---")?;
+    let fm = &rest[..end];
+    let seq: u64 = fm.lines().find_map(|l| {
+      let v = l.trim().strip_prefix("seq:")?;
+      v.trim().parse().ok()
+    })?;
+    let body = rest[end + 4..].trim().to_string();
+    if body.is_empty() { return None; }
+    return Some((seq, body));
+  }
+  let body = data.trim().to_string();
+  if body.is_empty() { return None; }
+  // seq が無い場合は、文のハッシュ（53bit に収める）を目印にする
+  let mut h: u64 = 0xcbf29ce484222325;
+  for b in body.as_bytes() { h ^= *b as u64; h = h.wrapping_mul(0x100000001b3); }
+  Some((h & 0x1F_FFFF_FFFF_FFFF, body))
 }
 
 /// ウェブ版フックで届く返事（ブラウザ側スクリプト → この受け口 → 画面へのイベント）

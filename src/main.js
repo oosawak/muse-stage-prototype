@@ -308,7 +308,7 @@ if (inTauri) setInterval(async () => {
     const r = await invoke('read_inbox');
     if (!r) return;
     if (lastInboxSeq < 0) { lastInboxSeq = r[0]; return; } // 初回は基準だけ決めて、古い文は読まない
-    if (r[0] > lastInboxSeq) { lastInboxSeq = r[0]; acceptReply(r[1], 'ミューズ直送'); }
+    if (r[0] !== lastInboxSeq) { lastInboxSeq = r[0]; acceptReply(r[1], 'ミューズ直送'); }
   } catch { /* ファイルが無い間は静かに待つ */ }
 }, 700);
 
