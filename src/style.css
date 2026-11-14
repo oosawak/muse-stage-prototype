@@ -63,3 +63,13 @@ body.no-panel .panel, body.no-panel .replies { opacity: 0 !important; pointer-ev
 body.present { background: transparent; }
 body.present #stage { background: transparent; }
 body.present .replies { display: none; }
+
+/* スライド：舞台の後ろに敷く。舞台（キャンバス）はその手前 */
+#slideImg { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; display: none; z-index: 0; }
+#stage { z-index: 1; }
+.filebtn { font: inherit; color: var(--ink); background: rgba(255,255,255,.08); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+.caption { z-index: 3; }
+.panel { z-index: 4; }
+.replies { z-index: 4; }
+.loading { z-index: 6; }

@@ -7,6 +7,9 @@
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
+  <!-- スライド：舞台の後ろに敷く（キャラクターはこの手前で動く） -->
+  <img id="slideImg" alt="">
+
   <!-- 舞台：VRM のミューズを大きく表示する -->
   <div id="stage"></div>
 
@@ -43,12 +46,19 @@
       <label class="chk" title="舞台へのクリックを後ろの画面に通す（戻すときはアプリを選んで T キー）"><input type="checkbox" id="chkThrough"> クリック透過</label>
     </div>
     <div class="row">
+      <label class="filebtn" title="スライド画像（PNG／JPG）を選ぶ。ファイル名の順に並ぶ">スライドを選ぶ<input type="file" id="slideFiles" accept="image/*" multiple hidden></label>
+      <button id="btnSlidePrev" title="前のスライド（←キー）">◀</button>
+      <button id="btnSlideNext" title="次のスライド（→キー、舞台をクリックでも進む）">▶</button>
+      <span id="slideCount" class="muted"></span>
+      <button id="btnSlideClear" title="スライドを消す">スライドを消す</button>
+    </div>
+    <div class="row">
       <button id="btnGrab" title="Muse.app の画面から、いちばん新しい返事を取り込む（アクセシビリティの許可が要る）">Muse から取り込む</button>
       <label class="chk" title="直送・フックで新しい返事が届いたら、自動で読み上げる"><input type="checkbox" id="chkAuto"> 新しい返事を自動で読む</label>
       <label class="chk" title="Muse.app の画面を2秒ごとに見て、新しい返事を取り込んで読み上げる（アクセシビリティの許可が要る）"><input type="checkbox" id="chkAutoGrab"> アプリから自動取り込み</label>
     </div>
     <div class="status-line"><span id="spinner" class="spinner"></span><div id="status" class="status">準備中…</div></div>
-    <div class="keys">Space 読み上げ ・ Esc 止める ・ F 全画面 ・ H パネルを隠す ・ [ ] 速さ ・ ⌘Enter 読み上げ</div>
+    <div class="keys">Space 読み上げ ・ Esc 止める ・ F 全画面 ・ H パネルを隠す ・ ←→ スライド ・ P 発表モード ・ T クリック透過 ・ [ ] 速さ ・ ⌘Enter 読み上げ</div>
   </div>
 
   <div id="loading" class="loading">ミューズを呼んでいます…</div>

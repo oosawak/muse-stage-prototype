@@ -397,14 +397,20 @@ addEventListener('keydown', e => {
   if (e.key === 'h' || e.key === 'H') { const off = document.body.classList.toggle('no-panel'); prefs.set('noPanel', off ? 1 : 0); }
   if (e.key === 'p' || e.key === 'P') setPresentMode(!presentMode);
   if (e.key === 't' || e.key === 'T') setClickThrough(!throughOn);
+  if (e.key === 'ArrowRight' || e.key === 'PageDown') { if (slides.urls.length) { e.preventDefault(); showSlide(slides.i + 1); } }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') { if (slides.urls.length) { e.preventDefault(); showSlide(slides.i - 1); } }
   if (e.key === '[' || e.key === ']') { const r = $('#rate'); r.value = Math.min(1.4, Math.max(0.6, rateMul() + (e.key === ']' ? .05 : -.05))).toFixed(2); r.dispatchEvent(new Event('input')); setStatus(`速さ ${Number(r.value).toFixed(2)}`); }
 });
 /* ---------- 発表モード：背景を透明にして、いちばん手前に出す ---------- */
 let presentMode = false, throughOn = false;
+function updateStageBackground() { // 発表モードか、スライド表示中は、舞台の背景を透かす
+  const clear = presentMode || slides.urls.length > 0;
+  scene.background = clear ? null : new THREE.Color(0x0d0b14);
+  glow.visible = !clear;
+}
 async function setPresentMode(on) {
   presentMode = on;
-  scene.background = on ? null : new THREE.Color(0x0d0b14);
-  glow.visible = !on;
+  updateStageBackground();
   document.body.classList.toggle('present', on);
   $('#chkPresent').checked = on;
   prefs.set('present', on ? 1 : 0);
@@ -420,6 +426,37 @@ async function setClickThrough(on) {
 $('#chkPresent').addEventListener('change', () => setPresentMode($('#chkPresent').checked));
 $('#chkThrough').addEventListener('change', () => setClickThrough($('#chkThrough').checked));
 if (prefs.get('present', '0') === '1') setPresentMode(true); // クリック透過は安全のため毎回オフから始める
+
+/* ---------- スライド表示：舞台の後ろにスライドを敷き、キャラクターがその手前で動く ---------- */
+const slides = { urls: [], names: [], i: 0 };
+function showSlide(i) {
+  if (!slides.urls.length) return;
+  slides.i = Math.min(slides.urls.length - 1, Math.max(0, i));
+  $('#slideImg').src = slides.urls[slides.i];
+  $('#slideImg').style.display = 'block';
+  $('#slideCount').textContent = (slides.i + 1) + ' / ' + slides.urls.length;
+  updateStageBackground();
+}
+function clearSlides() {
+  slides.urls.forEach(u => URL.revokeObjectURL(u));
+  slides.urls = []; slides.names = []; slides.i = 0;
+  $('#slideImg').removeAttribute('src'); $('#slideImg').style.display = 'none';
+  $('#slideCount').textContent = '';
+  updateStageBackground();
+}
+$('#slideFiles').addEventListener('change', e => {
+  const files = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
+  if (!files.length) return;
+  clearSlides();
+  slides.urls = files.map(f => URL.createObjectURL(f));
+  slides.names = files.map(f => f.name);
+  showSlide(0);
+  setStatus('スライドを ' + files.length + ' 枚読み込みました（→キーか、舞台をクリックで進みます）');
+});
+$('#btnSlidePrev').addEventListener('click', () => showSlide(slides.i - 1));
+$('#btnSlideNext').addEventListener('click', () => showSlide(slides.i + 1));
+$('#btnSlideClear').addEventListener('click', clearSlides);
+$('#stage').addEventListener('click', () => { if (slides.urls.length) showSlide(slides.i + 1); });
 
 // 選んだものを覚える
 $('#rate').addEventListener('input', () => { $('#rateVal').textContent = rateMul().toFixed(2); prefs.set('rate', $('#rate').value); });
