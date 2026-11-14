@@ -142,7 +142,9 @@ fn build_messages(recs: &[(Vec<u32>, String)]) -> Vec<ChatMsg> {
       if let Some((_, parent)) = p.split_last() { *score.entry(parent.to_vec()).or_default() += 1; }
     }
   }
-  let list_parent = score.iter().max_by_key(|(_, &s)| s).filter(|(_, &s)| s >= 2).map(|(p, _)| p.clone());
+  let mut best: Option<(Vec<u32>, usize)> = None;
+  for (p, s) in &score { if best.as_ref().map_or(true, |(_, bs)| *s > *bs) { best = Some((p.clone(), *s)); } }
+  let list_parent = best.filter(|(_, s)| *s >= 2).map(|(p, _)| p);
   let Some(lp) = list_parent else {
     // 会話リストが特定できないときは、接頭辞つきだけを拾う（従来の動き）
     let mut out = vec![];
