@@ -236,7 +236,7 @@ function directorUpdate(dt) {
     if (director.state !== 'idle') { director.state = 'idle'; director.t = 2; }
     director.seq = []; director.pendingPeek = null; director.target = null; director.quiet = 0;
     actor.position.y += (0 - actor.position.y) * Math.min(1, dt * 4); // 下に隠れている途中なら、立ち位置に戻る
-    if (typeof slides !== 'undefined' && slides.urls.length) { // スライド表示中は、右側の定位置へ寄って喋る
+    if (typeof slides !== 'undefined' && slides.urls.length && !director.dodged) { // スライド表示中は、右側の定位置へ寄って喋る（よけている間はその場）
       const hx = viewHalf().halfW * .58;
       actor.position.x += (hx - actor.position.x) * Math.min(1, dt * 2);
       actor.position.z += (-.12 - actor.position.z) * Math.min(1, dt * 2);
@@ -253,6 +253,10 @@ function directorUpdate(dt) {
       playMotion(speaking ? 'talk' : 'idle'); faceCamera(dt);
       if (director.t <= 0) {
         if (speaking) director.t = 1.5;
+        else if (director.dodged) { // よけている間は、その場所で待つ（端にいなければ端へ歩く）
+          if (director.dodgeTarget && Math.hypot(actor.position.x - director.dodgeTarget.x, actor.position.z - director.dodgeTarget.z) > .1) dodgeMove(director.dodgeTarget.x, director.dodgeTarget.z);
+          else director.t = rand(2, 4);
+        }
         else if (director.quiet > 18 && !director.seq.length) startStory(); // しばらく話がなければ、物語を始める
         else chooseNext();
       }
@@ -645,7 +649,41 @@ $('#slideFiles').addEventListener('change', async e => {
 $('#btnSlidePrev').addEventListener('click', () => showSlide(slides.i - 1));
 $('#btnSlideNext').addEventListener('click', () => showSlide(slides.i + 1));
 $('#btnSlideClear').addEventListener('click', clearSlides);
-$('#stage').addEventListener('click', () => { if (slides.urls.length) showSlide(slides.i + 1); });
+/* ---------- キャラクターをクリック：脇へよける／戻る（発表中にスライドの文字へ被る対策） ---------- */
+const raycaster = new THREE.Raycaster();
+function hitsActor(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  if (!r.width || !r.height) return false;
+  raycaster.setFromCamera({ x: ((e.clientX - r.left) / r.width) * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1 }, camera);
+  return raycaster.intersectObject(actor, true).length > 0;
+}
+function dodgeMove(x, z) { director.state = 'move'; director.moveT = 0; director.target = { x, z, clip: 'walk', speed: .8 }; }
+function toggleDodge() {
+  if (director.dodged) {
+    director.dodged = false;
+    const back = director.dodgeBack || { x: 0, z: 0 };
+    director.dodgeTarget = null;
+    dodgeMove(back.x, back.z);
+    setStatus('キャラクターが戻ります');
+  } else {
+    const z = clamp(actor.position.z, -.6, .4);
+    const edge = (actor.position.x >= 0 ? 1 : -1) * halfAt(z) * .92; // いまいる側の端へ
+    director.dodged = true; director.seq = [];
+    director.dodgeBack = { x: actor.position.x, z: actor.position.z };
+    director.dodgeTarget = { x: edge, z };
+    dodgeMove(edge, z);
+    setStatus('キャラクターを脇へよけました（もう一度クリックで戻ります）');
+  }
+}
+let hoverAt = 0;
+renderer.domElement.addEventListener('pointermove', e => {
+  const now = performance.now(); if (now - hoverAt < 150) return; hoverAt = now;
+  renderer.domElement.style.cursor = hitsActor(e) ? 'pointer' : '';
+});
+$('#stage').addEventListener('click', e => {
+  if (hitsActor(e)) { toggleDodge(); return; } // キャラクターをクリックしたらよける（スライドは進めない）
+  if (slides.urls.length) showSlide(slides.i + 1);
+});
 
 // 選んだものを覚える
 $('#rate').addEventListener('input', () => { $('#rateVal').textContent = rateMul().toFixed(2); prefs.set('rate', $('#rate').value); });
