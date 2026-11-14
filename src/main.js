@@ -35,11 +35,13 @@ scene.background = new THREE.Color(0x0d0b14);
 const glow = new THREE.Mesh(new THREE.CircleGeometry(1.4, 64), new THREE.MeshBasicMaterial({ color: 0x3b2366, transparent: true, opacity: .55 }));
 glow.position.set(0, 1.35, -1.2); scene.add(glow);
 const camera = new THREE.PerspectiveCamera(26, 1, .05, 50);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x443355, 1.1));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x443355, 1.25));
+// 舞台全体にかかる前からの柔らかい光（追従しない。奥へ行っても顔が暗くならないように、2026-11-15 本人の「後ろまでライトを当てていい」で追加）
+const fill = new THREE.DirectionalLight(0xfff6e8, 0.55); fill.position.set(0.6, 1.8, 6); scene.add(fill); fill.target.position.set(0, .9, -.4); scene.add(fill.target);
 // キーとリムは台（actor）に追従させる。奥へ行っても光の当たり方が変わらないように、ライトと的をリグに入れて台の x/z へ合わせる
 const lightRig = new THREE.Group(); scene.add(lightRig);
-const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(1.2, 2.2, 2.4); lightRig.add(key); key.target.position.set(0, .9, 0); lightRig.add(key.target);
-const rim = new THREE.DirectionalLight(0xc77dff, 1.2); rim.position.set(-1.6, 1.8, -1.5); lightRig.add(rim); rim.target.position.set(0, 1, 0); lightRig.add(rim.target);
+const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(1.6, 2.8, 3.2); lightRig.add(key); key.target.position.set(0, .95, -.2); lightRig.add(key.target);
+const rim = new THREE.DirectionalLight(0xc77dff, 1.3); rim.position.set(-2.2, 2.4, -2.6); lightRig.add(rim); rim.target.position.set(0, 1, -.2); lightRig.add(rim.target);
 
 let vrm = null, placeholder = null, headY = 1.4;
 const actor = new THREE.Group(); scene.add(actor); // モデルを載せる台。うろうろ・かくれんぼは、この台ごと動かす
