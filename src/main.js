@@ -239,9 +239,11 @@ $('#rate').addEventListener('input', () => { $('#rateVal').textContent = rateMul
 $('#voice').addEventListener('change', () => prefs.set('voice', $('#voice').value));
 $('#engine').addEventListener('change', () => prefs.set('engine', $('#engine').value));
 $('#chkCaption').addEventListener('change', () => prefs.set('caption', $('#chkCaption').checked ? 1 : 0));
+$('#chkAuto').addEventListener('change', () => prefs.set('auto', $('#chkAuto').checked ? 1 : 0));
 $('#rate').value = prefs.get('rate', '0.9'); $('#rateVal').textContent = rateMul().toFixed(2);
 $('#engine').value = prefs.get('engine', 'voicevox'); // ずんだもん版の既定は VOICEVOX
 $('#chkCaption').checked = prefs.get('caption', '1') === '1';
+$('#chkAuto').checked = prefs.get('auto', '0') === '1';
 if (prefs.get('noPanel', '0') === '1') document.body.classList.add('no-panel');
 // マウスを動かしたときだけ、操作パネルを濃く見せる
 let awakeT = 0; addEventListener('mousemove', () => { document.body.classList.add('awake'); clearTimeout(awakeT); awakeT = setTimeout(() => document.body.classList.remove('awake'), 2500); });
