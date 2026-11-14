@@ -121,7 +121,7 @@ function playMotion(name, fade = .3) {
 function stopMotion() { if (curAction) { curAction.fadeOut(.3); curAction = null; curMotion = ''; } }
 
 // 演出の状態遷移：idle →（歩く・走る・隠れる・踊る）→ idle を繰り返す
-const director = { mode: 'wander', state: 'idle', t: 2, target: null, pendingPeek: null, hideY: 0, yesPlease: false, gesture: '', jumps: 0, quiet: 0, seq: [] };
+const director = { mode: 'wander', state: 'idle', t: 2, target: null, pendingPeek: null, hideY: 0, yesPlease: false, gesture: '', jumps: 0, quiet: 0, seq: [], rollCool: 0 };
 try { director.mode = prefs.get('motion', 'wander'); } catch (e) {}
 function viewHalf() {
   const dist = camera.position.z;
@@ -160,6 +160,9 @@ function goPeekBottom() {
   director.state = 'peekBottom'; director.t = rand(2.5, 4.5);
 }
 function goRoll() {
+  // ころころは回転が多く、見ていて目が回るので連発しない（間隔をあける）
+  if (director.rollCool > 0) { const v0 = viewHalf(); setMove(clamp(actor.position.x + rand(-1, 1) * .7, -v0.halfW * .7, v0.halfW * .7), actor.position.z, 'walk'); return; }
+  director.rollCool = 40;
   const v = viewHalf(), cx = actor.position.x;
   const dur = actions.roll?.getClip().duration || 1;
   const nx = clamp(cx + rand(-1, 1) * .9, -v.halfW * .7, v.halfW * .7);
@@ -186,10 +189,10 @@ function startStory() {
     [{ k: 'peekBottom' }, { k: 'rest', t: .5 }, { k: 'peekSide', side: -1 }, { k: 'peekSide', side: 1 }, { k: 'jump' }, { k: 'gesture', name: 'yes' }],
     // 探検：奥へ走る → 端から様子見 → 手前に戻って踊る
     [{ k: 'move', x: rand(-.5, .5), z: -1.25, clip: 'jog' }, { k: 'peekSide' }, { k: 'move', x: 0, z: .3, clip: 'walk' }, { k: 'dance', t: 6 }],
-    // おどりの練習：踊る → 跳ねる → もっと踊る
-    [{ k: 'dance', t: 6 }, { k: 'jump' }, { k: 'dance', t: 7 }, { k: 'gesture', name: 'yes' }],
-    // ころころ散歩：転がって移動 → 踊る → うなずく
-    [{ k: 'roll' }, { k: 'dance', t: 5 }, { k: 'roll' }, { k: 'gesture', name: 'yes' }],
+    // おどりの練習：踊る → 跳ねる → もっと踊る（踊りは短めに）
+    [{ k: 'dance', t: 5 }, { k: 'jump' }, { k: 'dance', t: 5 }, { k: 'gesture', name: 'yes' }],
+    // ころころ散歩：転がって移動は1回だけ → 踊る → 歩いて戻る → うなずく
+    [{ k: 'roll' }, { k: 'dance', t: 5 }, { k: 'move', x: 0, z: .3, clip: 'walk' }, { k: 'gesture', name: 'yes' }],
   ];
   director.seq = stories[Math.floor(Math.random() * stories.length)].slice();
   runStep(director.seq.shift());
@@ -206,13 +209,13 @@ function chooseNext() {
     goPeekBottom();
   } else if (r < .60) { // ぴょんぴょん跳ねる（2回）
     director.state = 'jump'; director.jumps = 2; playMotion('jump', .1);
-  } else if (r < .67) { // ころころ転がって移動する
+  } else if (r < .615) { // ころころ転がって移動する（回転が多く目が回るので、めったに出さない）
     goRoll();
-  } else if (r < .83) { // よく踊る
-    director.state = 'dance'; director.t = rand(5, 9);
-  } else if (r < .86) { // たまに首を振る（いやいや）
+  } else if (r < .765) { // 踊る（長く回らないよう短めに）
+    director.state = 'dance'; director.t = rand(4, 6.5);
+  } else if (r < .795) { // たまに首を振る（いやいや）
     startGesture('no');
-  } else toIdle(rand(2.5, 5));
+  } else toIdle(rand(3, 6));
 }
 function directorUpdate(dt) {
   if (!vrm || !mixer || !actions.idle) return;
@@ -227,6 +230,7 @@ function directorUpdate(dt) {
     return;
   }
   director.t -= dt;
+  if (director.rollCool > 0) director.rollCool -= dt;
   switch (director.state) {
     case 'idle':
       if (speaking) director.quiet = 0; else director.quiet += dt; // 静かな時間をはかる
