@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
 
 const $ = s => document.querySelector(s);
 const inTauri = '__TAURI_INTERNALS__' in window;
@@ -37,6 +38,8 @@ const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(1.2, 2.2
 const rim = new THREE.DirectionalLight(0xc77dff, 1.2); rim.position.set(-1.6, 1.8, -1.5); scene.add(rim);
 
 let vrm = null, placeholder = null, headY = 1.4;
+const actor = new THREE.Group(); scene.add(actor); // モデルを載せる台。うろうろ・かくれんぼは、この台ごと動かす
+let modelH = 1.4, modelW = .5;
 function frameCamera() {
   // 上半身を大きく：頭の高さを中心に、胸から上が入るように
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false);
@@ -64,16 +67,147 @@ async function loadVRM(url) {
   const v = gltf.userData.vrm; if (!v) throw new Error('VRM として読めませんでした');
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
   VRMUtils.rotateVRM0(v);
-  if (vrm) { scene.remove(vrm.scene); VRMUtils.deepDispose(vrm.scene); }
+  if (vrm) { actor.remove(vrm.scene); VRMUtils.deepDispose(vrm.scene); }
   if (placeholder) { scene.remove(placeholder); placeholder = null; }
-  vrm = v; scene.add(v.scene);
+  if (mixer) { mixer.stopAllAction(); mixer = null; }
+  for (const k of Object.keys(actions)) delete actions[k];
+  curAction = null; curMotion = '';
+  vrm = v; actor.add(v.scene);
+  actor.position.set(0, 0, 0); actor.rotation.set(0, 0, 0);
+  const box = new THREE.Box3().setFromObject(v.scene);
+  modelH = Math.max(.3, box.max.y - box.min.y); modelW = Math.max(.2, box.max.x - box.min.x);
+  director.state = 'idle'; director.t = 1; director.target = null;
   // 腕を下ろす（T ポーズのままにしない）
   const b = n => v.humanoid.getNormalizedBoneNode(n);
   if (b('leftUpperArm')) b('leftUpperArm').rotation.z = -1.2;
   if (b('rightUpperArm')) b('rightUpperArm').rotation.z = 1.2;
   const head = b('head'); if (head) { v.scene.updateMatrixWorld(true); headY = head.getWorldPosition(new THREE.Vector3()).y; }
   frameCamera();
+  setupMotions();
   return v.meta?.name || v.meta?.title || 'VRM';
+}
+
+/* ---------- モーション（VRMA）と、うろうろする演出 ---------- */
+// モーション素材は CC0（Quaternius／KayKit を open-vrma が VRMA 化したもの）。出典は MOTIONS.md
+const MOTION_FILES = { idle: 'Idle_Loop', talk: 'Idle_Talking_Loop', walk: 'Walk_Loop', jog: 'Jog_Fwd_Loop', yes: 'Yes', dance: 'Dance_Loop', crouch: 'Crouch_Idle_Loop' };
+let mixer = null; const actions = {}; let curAction = null, curMotion = '';
+async function setupMotions() {
+  if (!vrm) return;
+  mixer = new THREE.AnimationMixer(vrm.scene);
+  const loader = new GLTFLoader(); loader.register(p => new VRMAnimationLoaderPlugin(p));
+  for (const [name, file] of Object.entries(MOTION_FILES)) {
+    try {
+      const g = await loader.loadAsync('motions/' + file + '.vrma');
+      const anim = g.userData.vrmAnimations?.[0]; if (!anim) continue;
+      const a = mixer.clipAction(createVRMAnimationClip(anim, vrm));
+      a.setLoop(name === 'yes' ? THREE.LoopOnce : THREE.LoopRepeat);
+      if (name === 'yes') a.clampWhenFinished = true;
+      actions[name] = a;
+    } catch (e) { report('モーションを読めませんでした: ' + file); }
+  }
+  playMotion(speaking ? 'talk' : 'idle', 0);
+}
+function playMotion(name, fade = .3) {
+  const a = actions[name]; if (!a || curAction === a) return;
+  a.enabled = true; a.setEffectiveWeight(1); a.fadeIn(fade); a.play();
+  if (curAction) curAction.fadeOut(fade);
+  curAction = a; curMotion = name;
+}
+function stopMotion() { if (curAction) { curAction.fadeOut(.3); curAction = null; curMotion = ''; } }
+
+// 演出の状態遷移：idle →（歩く・走る・隠れる・踊る）→ idle を繰り返す
+const director = { mode: 'wander', state: 'idle', t: 2, target: null, pendingPeek: null, hideY: 0, yesPlease: false };
+try { director.mode = prefs.get('motion', 'wander'); } catch (e) {}
+function viewHalf() {
+  const dist = camera.position.z;
+  const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * dist;
+  return { halfH, halfW: halfH * camera.aspect, dist, camY: camera.position.y, centerY: headY - .18 };
+}
+function halfAt(z) { // 奥行き z の位置で見える範囲（カメラからの距離で縮む）
+  const v = viewHalf(); const s = (v.dist - z) / v.dist;
+  return { halfW: v.halfW * s, halfH: v.halfH * s, centerY: v.camY + (v.centerY - v.camY) * s };
+}
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+function turnToward(cur, target, maxStep) {
+  let diff = (target - cur) % (Math.PI * 2);
+  if (diff > Math.PI) diff -= Math.PI * 2; if (diff < -Math.PI) diff += Math.PI * 2;
+  return cur + clamp(diff, -maxStep, maxStep);
+}
+const faceCamera = dt => { actor.rotation.y = turnToward(actor.rotation.y, 0, dt * 3.5); };
+function toIdle(t) { director.state = 'idle'; director.t = t; director.target = null; director.pendingPeek = null; }
+function setMove(x, z, clip) {
+  director.state = 'move';
+  director.target = { x, z, clip, speed: clip === 'jog' ? 1.25 : .5 };
+}
+function chooseNext() {
+  const v = viewHalf(), cx = actor.position.x, cz = actor.position.z, r = Math.random();
+  if (r < .32) { // ちょこちょこ：近くの点へ歩く
+    setMove(clamp(cx + rand(-1, 1) * .85, -v.halfW * .8, v.halfW * .8), clamp(cz + rand(-1, 1) * .5, -1.1, .5), 'walk');
+  } else if (r < .50) { // 奥へ走る／手前へ戻る
+    setMove(rand(-.6, .6), cz > -.5 ? -1.25 : rand(.1, .5), 'jog');
+  } else if (r < .66) { // 端に隠れて顔だけ出す
+    const side = Math.random() < .5 ? -1 : 1;
+    const z = clamp(cz, -.8, .4), h = halfAt(z);
+    director.pendingPeek = 'side';
+    setMove(side * (h.halfW + modelW * .5 - .13), z, 'walk');
+  } else if (r < .78) { // 下に隠れて顔だけ出す
+    const h = halfAt(actor.position.z);
+    director.hideY = (h.centerY - h.halfH) - modelH * .78;
+    director.state = 'peekBottom'; director.t = rand(2.5, 4.5);
+  } else if (r < .86) { // たまに踊る
+    director.state = 'dance'; director.t = rand(4, 7);
+  } else toIdle(rand(2.5, 5));
+}
+function directorUpdate(dt) {
+  if (!vrm || !mixer || !actions.idle) return;
+  if (director.mode === 'off') { stopMotion(); return; }
+  if (director.mode === 'stay') { playMotion(speaking ? 'talk' : 'idle'); faceCamera(dt); return; }
+  director.t -= dt;
+  switch (director.state) {
+    case 'idle':
+      if (director.yesPlease && actions.yes) { director.yesPlease = false; director.state = 'yes'; director.t = actions.yes.getClip().duration; playMotion('yes', .15); break; }
+      playMotion(speaking ? 'talk' : 'idle'); faceCamera(dt);
+      if (director.t <= 0) { if (speaking) director.t = 1.5; else chooseNext(); }
+      break;
+    case 'yes':
+      faceCamera(dt);
+      if (director.t <= 0) toIdle(rand(1.5, 3));
+      break;
+    case 'dance':
+      playMotion('dance'); faceCamera(dt);
+      if (director.t <= 0) toIdle(rand(2, 4));
+      break;
+    case 'move': {
+      const tg = director.target; if (!tg) { toIdle(1); break; }
+      playMotion(tg.clip);
+      const dx = tg.x - actor.position.x, dz = tg.z - actor.position.z, d = Math.hypot(dx, dz);
+      if (d < .06) {
+        if (director.pendingPeek === 'side') { director.pendingPeek = null; director.state = 'peekSide'; director.t = rand(2.5, 4.5); }
+        else toIdle(rand(2, 5));
+        break;
+      }
+      actor.rotation.y = turnToward(actor.rotation.y, Math.atan2(dx, dz), dt * 4.5);
+      const step = Math.min(d, tg.speed * dt);
+      actor.position.x += Math.sin(actor.rotation.y) * step;
+      actor.position.z += Math.cos(actor.rotation.y) * step;
+      break;
+    }
+    case 'peekSide':
+      playMotion('idle'); faceCamera(dt);
+      if (director.t <= 0) { const v = viewHalf(); setMove(actor.position.x > 0 ? v.halfW * .35 : -v.halfW * .35, actor.position.z, 'walk'); }
+      break;
+    case 'peekBottom':
+      playMotion('crouch'); faceCamera(dt);
+      actor.position.y += (director.hideY - actor.position.y) * Math.min(1, dt * 3);
+      if (director.t <= 0) director.state = 'riseBottom';
+      break;
+    case 'riseBottom':
+      playMotion('idle');
+      actor.position.y += (0 - actor.position.y) * Math.min(1, dt * 3);
+      if (Math.abs(actor.position.y) < .01) { actor.position.y = 0; toIdle(rand(2, 4)); }
+      break;
+    default: toIdle(2);
+  }
 }
 
 /* ---------- 口パク・まばたき・待機の動き ---------- */
@@ -89,10 +223,13 @@ function tick() {
   if (vrm) {
     const em = vrm.expressionManager;
     if (em) { em.setValue('aa', Math.min(1, mouth)); em.setValue('oh', Math.min(1, mouth * .3)); em.setValue('blink', blink); em.setValue('happy', .15); }
-    const b = n => vrm.humanoid.getNormalizedBoneNode(n);
-    // 呼吸と、話しているときの小さなうなずき
-    const sp = b('spine'); if (sp) sp.rotation.x = Math.sin(t * 1.6) * .015;
-    const hd = b('head'); if (hd) { hd.rotation.x = speaking ? Math.sin(t * 3.1) * .04 : Math.sin(t * .9) * .015; hd.rotation.y = Math.sin(t * .5) * .05; }
+    directorUpdate(dt);
+    if (mixer) mixer.update(dt);
+    if (!curAction) { // モーション再生中は骨をそちらに任せ、止まっている間だけ呼吸とうなずきを付ける
+      const b = n => vrm.humanoid.getNormalizedBoneNode(n);
+      const sp = b('spine'); if (sp) sp.rotation.x = Math.sin(t * 1.6) * .015;
+      const hd = b('head'); if (hd) { hd.rotation.x = speaking ? Math.sin(t * 3.1) * .04 : Math.sin(t * .9) * .015; hd.rotation.y = Math.sin(t * .5) * .05; }
+    }
     vrm.update(dt);
   } else if (placeholder) {
     placeholder.userData.mouth.scale.y = 1 + mouth * 6;
@@ -245,6 +382,8 @@ $('#rate').value = prefs.get('rate', '0.9'); $('#rateVal').textContent = rateMul
 $('#engine').value = prefs.get('engine', 'voicevox'); // ずんだもん版の既定は VOICEVOX
 $('#chkCaption').checked = prefs.get('caption', '1') === '1';
 $('#chkAuto').checked = prefs.get('auto', '1') === '1'; // 直送モードの基本は「新しい投稿は喋る」。外したらクリックで喋る
+$('#motionMode').value = director.mode;
+$('#motionMode').addEventListener('change', () => { director.mode = $('#motionMode').value; prefs.set('motion', director.mode); });
 $('#chkAutoGrab').checked = prefs.get('autoGrab', '0') === '1';
 if (prefs.get('noPanel', '0') === '1') document.body.classList.add('no-panel');
 // マウスを動かしたときだけ、操作パネルを濃く見せる
@@ -297,6 +436,7 @@ function acceptReply(text, source) {
   $('#text').value = text;
   setStatus(source + 'で返事が届きました');
   report(source + 'で返事を受信しました');
+  director.yesPlease = true; // 返事が来たら、まず小さくうなずく
   if ($('#chkAuto').checked && !speaking) speak(text); // 「自動で読む」が入っていれば、そのまま読み上げる
 }
 if (hookListen) hookListen('hooked-reply', e => acceptReply(e.payload?.text, 'ウェブフック'));
