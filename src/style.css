@@ -6,7 +6,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 
 /* 字幕：画面の下のほう、大きく */
 .caption { position: fixed; left: 50%; bottom: 7vh; transform: translateX(-50%); width: min(88vw, 1400px);
-  text-align: center; font-size: clamp(22px, 3.2vw, 48px); font-weight: 700; line-height: 1.45;
+  text-align: center; font-size: clamp(28px, 4.2vw, 64px); font-weight: 700; line-height: 1.45;
   text-shadow: 0 2px 6px #000, 0 0 2px #000; pointer-events: none; opacity: 0; transition: opacity .35s; }
 .caption.on { opacity: 1; }
 .caption .done { color: #fff; } .caption .rest { color: rgba(255,255,255,.55); }
@@ -26,6 +26,10 @@ button:disabled { opacity: .45; cursor: default; }
 select { max-width: 150px; }
 .chk { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); }
 .status { margin-top: 6px; color: var(--muted); min-height: 1.2em; }
+.keys { margin-top: 4px; color: var(--muted); opacity: .75; font-size: 11px; }
+.chk input[type=range] { width: 90px; accent-color: var(--accent); }
+/* H キーでパネルをまるごと隠す（発表中は何も見せない） */
+body.no-panel .panel { opacity: 0 !important; pointer-events: none; }
 
 .loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 20px; color: var(--muted);
   background: var(--bg); transition: opacity .5s; }

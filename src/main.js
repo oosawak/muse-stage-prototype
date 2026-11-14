@@ -15,6 +15,10 @@ if (inTauri) {
 const errText = e => String(e?.message ?? e); // Rust 側のエラーは文字列で届く
 const report = msg => { console.log('[muse-stage]', msg); if (inTauri) invoke('report', { msg }).catch(() => {}); };
 const setStatus = t => { $('#status').textContent = t; };
+// 声・速さなどの選択を覚えておく（使えないときは覚えないだけで、動きは変わらない）
+const prefs = { get(k, d) { try { const v = localStorage.getItem('muse-stage.' + k); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('muse-stage.' + k, String(v)); } catch (e) {} } };
+const rateMul = () => Number($('#rate').value) || 1; // 1 が標準。say には 1 分あたりの語数（標準 175）に直して渡す（Kyoko は効きが小さいので 2 乗で強める）
 
 /* ---------- 3D の舞台 ---------- */
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -110,7 +114,7 @@ function speakWeb(text) {
     if (!ss || typeof SpeechSynthesisUtterance === 'undefined') return reject(new Error('speechSynthesis がありません'));
     ss.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'ja-JP'; const jv = webVoices(); if (jv.length) u.voice = jv.find(v => /kyoko/i.test(v.name)) || jv[0];
+    u.lang = 'ja-JP'; u.rate = rateMul(); const jv = webVoices(); if (jv.length) u.voice = jv.find(v => /kyoko/i.test(v.name)) || jv[0];
     let started = false;
     const timer = setTimeout(() => { if (!started) { ss.cancel(); reject(new Error('1.5 秒たっても読み上げが始まりません')); } }, 1500);
     u.onstart = () => { started = true; clearTimeout(timer); speaking = true; };
@@ -123,7 +127,7 @@ function speakWeb(text) {
 async function speakSay(text) {
   if (!inTauri) throw new Error('say は Tauri アプリの中でだけ使えます');
   speaking = true;
-  try { const r = await invoke('speak_say', { text, voice: $('#voice').value || 'Kyoko', rate: 0 }); return r === 'stopped' ? 'stopped' : 'say'; }
+  try { const r = await invoke('speak_say', { text, voice: $('#voice').value || 'Kyoko', rate: Math.round(175 * rateMul() ** 2) }); return r === 'stopped' ? 'stopped' : 'say'; }
   finally { speaking = false; }
 }
 async function speak(text) {
@@ -182,7 +186,18 @@ addEventListener('keydown', e => {
   if (e.key === 'f' || e.key === 'F') toggleFull();
   if (e.key === ' ') { e.preventDefault(); speak($('#text').value); }
   if (e.key === 'Escape') stop();
+  if (e.key === 'h' || e.key === 'H') { const off = document.body.classList.toggle('no-panel'); prefs.set('noPanel', off ? 1 : 0); }
+  if (e.key === '[' || e.key === ']') { const r = $('#rate'); r.value = Math.min(1.4, Math.max(0.6, rateMul() + (e.key === ']' ? .05 : -.05))).toFixed(2); r.dispatchEvent(new Event('input')); setStatus(`速さ ${Number(r.value).toFixed(2)}`); }
 });
+// 選んだものを覚える
+$('#rate').addEventListener('input', () => { $('#rateVal').textContent = rateMul().toFixed(2); prefs.set('rate', $('#rate').value); });
+$('#voice').addEventListener('change', () => prefs.set('voice', $('#voice').value));
+$('#engine').addEventListener('change', () => prefs.set('engine', $('#engine').value));
+$('#chkCaption').addEventListener('change', () => prefs.set('caption', $('#chkCaption').checked ? 1 : 0));
+$('#rate').value = prefs.get('rate', '0.9'); $('#rateVal').textContent = rateMul().toFixed(2);
+$('#engine').value = prefs.get('engine', 'auto');
+$('#chkCaption').checked = prefs.get('caption', '1') === '1';
+if (prefs.get('noPanel', '0') === '1') document.body.classList.add('no-panel');
 // マウスを動かしたときだけ、操作パネルを濃く見せる
 let awakeT = 0; addEventListener('mousemove', () => { document.body.classList.add('awake'); clearTimeout(awakeT); awakeT = setTimeout(() => document.body.classList.remove('awake'), 2500); });
 // VRM ファイルを画面に落とすと入れ替わる
@@ -231,7 +246,8 @@ setInterval(async () => {
   let voices = [];
   if (inTauri) { try { voices = await invoke('ja_voices'); } catch (e) {} }
   if (!voices.length) voices = ['Kyoko'];
-  $('#voice').innerHTML = voices.map(v => `<option${v === 'Kyoko' ? ' selected' : ''}>${v}</option>`).join('');
+  const savedVoice = prefs.get('voice', 'Kyoko'), pick = voices.includes(savedVoice) ? savedVoice : 'Kyoko';
+  $('#voice').innerHTML = voices.map(v => `<option${v === pick ? ' selected' : ''}>${v}</option>`).join('');
   // speechSynthesis の声は、少し遅れて届くことがある
   await new Promise(r => setTimeout(r, 600));
   const ss = !!window.speechSynthesis;
