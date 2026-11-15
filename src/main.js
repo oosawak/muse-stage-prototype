@@ -750,6 +750,13 @@ async function loadBundledSlides() {
   } catch (e) { /* 同梱が無ければ何もしない */ }
 }
 loadBundledSlides();
+/* 埋め込んだページ（HTMLスライド）の中にフォーカスがあると、舞台側のキーは届かない。
+   ページ側が ←→ を postMessage で知らせてくれたら、舞台のスライド送りに使う（↑↓はページ内の移動に残す） */
+window.addEventListener('message', (e) => {
+  if (!slides.urls.length) return;
+  if (e.data?.museStageNav === 'next') showSlide(slides.i + 1);
+  else if (e.data?.museStageNav === 'prev') showSlide(slides.i - 1);
+});
 $('#btnSlidePrev').addEventListener('click', () => showSlide(slides.i - 1));
 $('#btnSlideNext').addEventListener('click', () => showSlide(slides.i + 1));
 $('#btnSlideClear').addEventListener('click', clearSlides);
