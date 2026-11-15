@@ -924,7 +924,7 @@ if (inTauri) setInterval(async () => {
 async function grabMuse(manual = false) {
   if (!inTauri) throw new Error('アプリの中でだけ使えます');
   // 手動の取り込みは十数秒かかるので、クルクルと「取り込み中」を出してボタンを止める（自動の見回りでは出さない）
-  if (manual) { $('#spinner').classList.add('on'); $('#btnGrab').disabled = true; setStatus('Muse.app から取り込み中…'); }
+  if (manual) { $('#spinner').classList.add('on'); $('#btnGrab').disabled = true; setStatus('AX取り込み中…'); }
   try {
     const msgs = await invoke('read_muse', { app: 'Muse' });
     report(`Muse.app から会話 ${msgs.length} 件を読めました`);
@@ -937,7 +937,7 @@ async function grabMuse(manual = false) {
   }
 }
 $('#btnGrab').onclick = async () => {
-  try { const { msgs, replies, latest } = await grabMuse(true); $('#text').value = latest; setStatus(`Muse.app から取り込みました（返事 ${replies.length} 件・会話 ${msgs.length} 件。右の一覧からも選べます）`); }
+  try { const { msgs, replies, latest } = await grabMuse(true); $('#text').value = latest; setStatus(`AXで取り込みました（返事 ${replies.length} 件・会話 ${msgs.length} 件。右の一覧からも選べます）`); }
   catch (e) { setStatus('取り込めませんでした：' + errText(e) + '（システム設定 → プライバシーとセキュリティ → アクセシビリティ で Muse Stage を許可）'); report('取り込み失敗: ' + errText(e)); }
 };
 // 自動取り込み（アクセシビリティ版）：2 秒ごとに Muse.app を見て、新しい返事が出たら読み上げる。
