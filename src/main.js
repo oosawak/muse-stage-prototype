@@ -112,7 +112,7 @@ async function setupMotions() {
       actions[name] = a;
     } catch (e) { report('モーションを読めませんでした: ' + file); }
   }
-  playMotion(speaking ? 'talk' : 'idle', 0);
+  playMotion(actorTalking() ? 'talk' : 'idle', 0);
 }
 function playMotion(name, fade = .3) {
   const a = actions[name]; if (!a || curAction === a) return;
@@ -230,7 +230,7 @@ function chooseNext() {
 function directorUpdate(dt) {
   if (!vrm || !mixer || !actions.idle) return;
   if (director.mode === 'off') { stopMotion(); return; }
-  if (director.mode === 'stay') { playMotion(speaking ? 'talk' : 'idle'); faceCamera(dt); return; }
+  if (director.mode === 'stay') { playMotion(actorTalking() ? 'talk' : 'idle'); faceCamera(dt); return; }
   // 話している間は、おまかせ演出（歩く・踊る・隠れる等）を止めて、その場で正面を向いて喋る（2026-11-14 本人要望）
   if (speaking) {
     if (director.state !== 'idle') { director.state = 'idle'; director.t = 2; }
@@ -241,7 +241,7 @@ function directorUpdate(dt) {
       actor.position.x += (hx - actor.position.x) * Math.min(1, dt * 2);
       actor.position.z += (-.12 - actor.position.z) * Math.min(1, dt * 2);
     }
-    playMotion('talk'); faceCamera(dt);
+    playMotion(actorTalking() ? 'talk' : 'idle'); faceCamera(dt); // 本人の文の間は、おしゃべりの動きではなく待機の動きで聞く
     return;
   }
   director.t -= dt;
@@ -250,7 +250,7 @@ function directorUpdate(dt) {
     case 'idle':
       if (speaking) director.quiet = 0; else director.quiet += dt; // 静かな時間をはかる
       if (director.yesPlease && actions.yes) { director.yesPlease = false; startGesture('yes'); break; }
-      playMotion(speaking ? 'talk' : 'idle'); faceCamera(dt);
+      playMotion(actorTalking() ? 'talk' : 'idle'); faceCamera(dt);
       if (director.t <= 0) {
         if (speaking) director.t = 1.5;
         else if (director.dodged) { // よけている間は、その場所で待つ（端にいなければ端へ歩く）
@@ -317,6 +317,8 @@ function directorUpdate(dt) {
 
 /* ---------- 口パク・まばたき・待機の動き ---------- */
 let speaking = false, mouth = 0, blinkT = 2;
+let speakingWho = 'muse'; // 声分けのとき、今読んでいるのが誰の文か。本人の文の間、キャラクターは喋らない（口パク・おしゃべりの動きを止めて、聞く側に回る）
+const actorTalking = () => speaking && speakingWho !== 'user';
 
 /* 会話の内容による動作の切り替え（舞台側の自動判定。送り手の印は使わない）
    読み上げの頭で文を見て、はっきりした場面だけポーズを決める。文の途中では切り替えない。
@@ -340,7 +342,7 @@ const clock = new THREE.Clock();
 function tick() {
   const dt = Math.min(.05, clock.getDelta()), t = clock.elapsedTime;
   // 口：話している間は、母音らしく開いたり閉じたりする（単純な開閉）
-  const target = speaking ? Math.max(0, Math.sin(t * 17) * .55 + Math.sin(t * 7.3) * .35 + .25) : 0;
+  const target = actorTalking() ? Math.max(0, Math.sin(t * 17) * .55 + Math.sin(t * 7.3) * .35 + .25) : 0;
   mouth += (target - mouth) * Math.min(1, dt * 18);
   blinkT -= dt; let blink = 0;
   if (blinkT < 0) { blink = Math.max(0, 1 - Math.abs(blinkT + .08) / .08); if (blinkT < -.16) blinkT = rand(2.5, 5.5); }
@@ -352,7 +354,7 @@ function tick() {
     if (!curAction) { // モーション再生中は骨をそちらに任せ、止まっている間だけ呼吸とうなずきを付ける
       const b = n => vrm.humanoid.getNormalizedBoneNode(n);
       const sp = b('spine'); if (sp) sp.rotation.x = Math.sin(t * 1.6) * .015;
-      const hd = b('head'); if (hd) { hd.rotation.x = speaking ? Math.sin(t * 3.1) * .04 : Math.sin(t * .9) * .015; hd.rotation.y = Math.sin(t * .5) * .05; }
+      const hd = b('head'); if (hd) { hd.rotation.x = actorTalking() ? Math.sin(t * 3.1) * .04 : Math.sin(t * .9) * .015; hd.rotation.y = Math.sin(t * .5) * .05; }
     }
     if (speechPose) { // 会話の内容で決めたポーズ（骨への上乗せ。モーション再生中でも効く）
       const e = t - speechPose.at, b = n => vrm.humanoid.getNormalizedBoneNode(n);
@@ -524,7 +526,8 @@ async function speak(text) {
     for (const seg of segs) {
       if (run !== speakRun) { used = 'stopped'; break; }
       showCaption(seg.text, segs.length > 1 ? (seg.who === 'user' ? '本人' : 'ミューズ') : '');
-      armSpeechPose(seg.text); // 文ごとに、内容でポーズを決める（質問の文は首かしげ、など）
+      speakingWho = seg.who; // 本人の文の間は、キャラクターは喋らずに聞く（口パク・おしゃべりの動き・内容ポーズを止める）
+      if (seg.who === 'user') speechPose = null; else armSpeechPose(seg.text); // 文ごとに、内容でポーズを決める（質問の文は首かしげ、など）
       used = await speakOne(seg.text, seg.who);
       if (used === 'stopped') break;
     }
@@ -539,7 +542,7 @@ async function speak(text) {
 }
 function stop() {
   speakRun++;
-  speaking = false; speechPose = null; if (vrm) vrm.scene.position.y = 0;
+  speaking = false; speakingWho = 'muse'; speechPose = null; if (vrm) vrm.scene.position.y = 0;
   stopVoicevox();
   try { window.speechSynthesis?.cancel(); } catch (e) {}
   if (inTauri) invoke('stop_say').catch(() => {});
