@@ -825,6 +825,14 @@ function setPanelFolded(fold) {
 }
 $('#btnPanelFold').addEventListener('click', () => setPanelFolded(!$('#panel').classList.contains('folded')));
 if (prefs.get('panelFold', '0') === '1') setPanelFolded(true);
+// 取り込んだ返事の一覧も折りたためるように（発表中は見出しだけ残す）
+function setRepliesFolded(fold) {
+  $('#replies').classList.toggle('folded', fold);
+  $('#btnRepliesFold').textContent = fold ? 'ひらく ▴' : 'たたむ ▾';
+  prefs.set('repliesFold', fold ? 1 : 0);
+}
+$('#btnRepliesFold').addEventListener('click', () => setRepliesFolded(!$('#replies').classList.contains('folded')));
+if (prefs.get('repliesFold', '0') === '1') setRepliesFolded(true);
 // マウスを動かしたときだけ、操作パネルを濃く見せる
 let awakeT = 0; addEventListener('mousemove', () => { document.body.classList.add('awake'); clearTimeout(awakeT); awakeT = setTimeout(() => document.body.classList.remove('awake'), 2500); });
 // VRM ファイルを画面に落とすと入れ替わる
