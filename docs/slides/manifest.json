@@ -1,0 +1,86 @@
+{
+  "title": "西日本FHピッチ資料",
+  "slides": [
+    "slides/pitch/slide-01.png",
+    "slides/pitch/slide-02.png",
+    "slides/pitch/slide-03.png",
+    "slides/pitch/slide-04.png",
+    "slides/pitch/slide-05.png",
+    "slides/pitch/slide-06.png",
+    "slides/pitch/slide-07.png",
+    "slides/pitch/slide-08.png",
+    "slides/pitch/slide-09.png",
+    "slides/pitch/slide-10.png",
+    "slides/pitch/slide-11.png",
+    "slides/lyre3-intro.png",
+    {
+      "src": "slides/yomukiku-sangokushi.mp4",
+      "type": "video"
+    },
+    {
+      "type": "games",
+      "games": [
+        {
+          "label": "CubeCoreDungeon",
+          "src": "https://oosawak.github.io/CubeCoreDungeon/"
+        },
+        {
+          "label": "xDimensionGameEngine",
+          "src": "https://oosawak.github.io/xDimensionGameEngine/"
+        },
+        {
+          "label": "ArisaQuest",
+          "src": "https://oosawak.github.io/arisa-quest/"
+        },
+        {
+          "label": "ArcadiaMusicForge",
+          "src": "https://oosawak.github.io/ArcadiaMusicForge/"
+        },
+        {
+          "label": "CubeBoy",
+          "src": "https://oosawak.github.io/html-player/#g=games/cube-boy/"
+        },
+        {
+          "label": "LineBoy",
+          "src": "https://oosawak.github.io/html-player/#g=games/line-boy/"
+        },
+        {
+          "label": "oosawak.github.io",
+          "src": "https://oosawak.github.io/"
+        }
+      ]
+    },
+    {
+      "src": "pitch/index.html",
+      "type": "iframe"
+    }
+  ],
+  "links": {
+    "11": [
+      {
+        "x": 0.055,
+        "y": 0.375,
+        "w": 0.89,
+        "h": 0.125,
+        "url": "https://oosawak.github.io/markdown-cms-oss/",
+        "label": "Markdown CMS オープンソース版"
+      },
+      {
+        "x": 0.055,
+        "y": 0.51,
+        "w": 0.89,
+        "h": 0.125,
+        "url": "https://oosawak.github.io/yamagata-gourmet/",
+        "label": "山形グルメ"
+      },
+      {
+        "x": 0.055,
+        "y": 0.645,
+        "w": 0.89,
+        "h": 0.125,
+        "url": "https://oosawak.github.io/materials/markdown-cms-lp/",
+        "label": "Markdown CMS のLP"
+      }
+    ]
+  }
+}
