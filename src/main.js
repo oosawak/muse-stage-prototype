@@ -588,7 +588,7 @@ function updateStageBackground() {
 }
 
 /* ---------- スライド表示：舞台の後ろにスライドを敷き、キャラクターがその手前で動く ---------- */
-const slides = { urls: [], names: [], i: 0 };
+const slides = { urls: [], names: [], i: 0, links: {} }; // links: 同梱スライドの manifest が持つ「ページ番号→リンク領域」の対応
 function showSlide(i) {
   if (!slides.urls.length) return;
   slides.i = Math.min(slides.urls.length - 1, Math.max(0, i));
@@ -596,12 +596,42 @@ function showSlide(i) {
   $('#slideImg').style.display = 'block';
   $('#slideCount').textContent = (slides.i + 1) + ' / ' + slides.urls.length;
   updateStageBackground();
+  renderSlideLinks();
 }
+/* スライド上のリンク：画像の表示位置（object-fit: contain）に合わせて、透明なリンク領域を重ねる */
+function renderSlideLinks() {
+  const box = $('#slideLinks');
+  box.innerHTML = '';
+  const list = slides.links[String(slides.i + 1)] || [];
+  for (const r of list) {
+    const a = document.createElement('a');
+    a.href = r.url; a.target = '_blank'; a.rel = 'noopener';
+    a.title = (r.label || r.url) + '（新しいタブで開きます）';
+    a.dataset.rect = JSON.stringify(r);
+    box.appendChild(a);
+  }
+  layoutSlideLinks();
+}
+function layoutSlideLinks() {
+  const img = $('#slideImg');
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  if (!iw || !ih) return;
+  const scale = Math.min(innerWidth / iw, innerHeight / ih);
+  const w = iw * scale, h = ih * scale, ox = (innerWidth - w) / 2, oy = (innerHeight - h) / 2;
+  for (const a of $('#slideLinks').children) {
+    const r = JSON.parse(a.dataset.rect);
+    a.style.left = (ox + r.x * w) + 'px'; a.style.top = (oy + r.y * h) + 'px';
+    a.style.width = (r.w * w) + 'px'; a.style.height = (r.h * h) + 'px';
+  }
+}
+$('#slideImg').addEventListener('load', layoutSlideLinks);
+addEventListener('resize', layoutSlideLinks);
 function clearSlides() {
   slides.urls.forEach(u => URL.revokeObjectURL(u));
-  slides.urls = []; slides.names = []; slides.i = 0;
+  slides.urls = []; slides.names = []; slides.i = 0; slides.links = {};
   $('#slideImg').removeAttribute('src'); $('#slideImg').style.display = 'none';
   $('#slideCount').textContent = '';
+  $('#slideLinks').innerHTML = '';
   updateStageBackground();
 }
 async function pdfToImageUrls(file) {
@@ -660,6 +690,7 @@ async function loadBundledSlides() {
     if (!list.length || slides.urls.length) return;
     slides.urls = list.slice();
     slides.names = list.map((s, i) => (m.title || '同梱スライド') + ' ' + (i + 1));
+    if (m.links && typeof m.links === 'object') slides.links = m.links; // ページ番号→リンク領域（任意）
     applySlides('デモ用スライドを ' + list.length + ' 枚読み込みました（→キーか、舞台をクリックで進みます）');
   } catch (e) { /* 同梱が無ければ何もしない */ }
 }

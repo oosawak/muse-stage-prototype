@@ -66,6 +66,9 @@ body.no-panel .panel, body.no-panel .replies { opacity: 0 !important; pointer-ev
 
 /* スライド：舞台の後ろに敷く。舞台（キャンバス）はその手前 */
 #slideImg { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; display: none; z-index: 0; }
+#slideLinks { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+#slideLinks a { position: absolute; pointer-events: auto; cursor: pointer; border-radius: 10px; }
+#slideLinks a:hover { background: rgba(255,255,255,.10); outline: 2px solid rgba(196,99,60,.85); }
 #stage { z-index: 1; }
 .filebtn { font: inherit; color: var(--ink); background: rgba(255,255,255,.08); border: 1px solid var(--line);
   border-radius: 8px; padding: 6px 10px; cursor: pointer; }
