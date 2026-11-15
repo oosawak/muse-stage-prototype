@@ -16,6 +16,12 @@
   <!-- 動画スライド（スライドの1枚として動画を置ける。表示中だけ最前面に出る） -->
   <video id="slideVideo" playsinline controls preload="metadata"></video>
 
+  <!-- ゲームスライド（タブで切り替えて、その場で遊べる実物を置く） -->
+  <div id="slideGame">
+    <div id="gameTabs"></div>
+    <iframe id="gameFrame" title="ゲームデモ" allow="autoplay; fullscreen; gamepad" allowfullscreen></iframe>
+  </div>
+
   <!-- 舞台：VRM のミューズを大きく表示する -->
   <div id="stage"></div>
 

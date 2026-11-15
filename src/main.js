@@ -588,24 +588,48 @@ function updateStageBackground() {
 }
 
 /* ---------- スライド表示：舞台の後ろにスライドを敷き、キャラクターがその手前で動く ---------- */
-const slides = { urls: [], names: [], kinds: [], i: 0, links: {} }; // kinds: 'image' | 'video'。links: 同梱スライドの manifest が持つ「ページ番号→リンク領域」の対応
+const slides = { urls: [], names: [], kinds: [], games: [], i: 0, links: {} }; // kinds: 'image' | 'video' | 'games'。links: 同梱スライドの manifest が持つ「ページ番号→リンク領域」の対応
 function showSlide(i) {
   if (!slides.urls.length) return;
   slides.i = Math.min(slides.urls.length - 1, Math.max(0, i));
-  const img = $('#slideImg'), vid = $('#slideVideo');
-  if (slides.kinds[slides.i] === 'video') {
-    img.style.display = 'none';
+  const img = $('#slideImg'), vid = $('#slideVideo'), game = $('#slideGame');
+  const kind = slides.kinds[slides.i];
+  if (kind === 'video') {
+    img.style.display = 'none'; game.style.display = 'none';
     if (vid.getAttribute('src') !== slides.urls[slides.i]) vid.src = slides.urls[slides.i];
     vid.style.display = 'block';
     vid.play?.().catch(() => { /* 自動再生が止められたら、操作に任せる */ });
+  } else if (kind === 'games') {
+    vid.pause?.(); vid.style.display = 'none'; img.style.display = 'none';
+    game.style.display = 'flex';
+    buildGameTabs(slides.games[slides.i] || []);
   } else {
-    vid.pause?.(); vid.style.display = 'none';
+    vid.pause?.(); vid.style.display = 'none'; game.style.display = 'none';
     img.src = slides.urls[slides.i];
     img.style.display = 'block';
   }
   $('#slideCount').textContent = (slides.i + 1) + ' / ' + slides.urls.length;
   updateStageBackground();
   renderSlideLinks();
+}
+/* ゲームスライド：タブで実物を切り替える（トップページのデモ切り替えと同じ発想） */
+function buildGameTabs(games) {
+  const bar = $('#gameTabs'), frame = $('#gameFrame');
+  bar.innerHTML = '';
+  games.forEach((g, gi) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = g.label || ('ゲーム' + (gi + 1));
+    if (frame.dataset.src === g.src) b.classList.add('on');
+    b.addEventListener('click', () => {
+      frame.src = g.src; frame.dataset.src = g.src;
+      [...bar.children].forEach(x => x.classList.remove('on')); b.classList.add('on');
+    });
+    bar.appendChild(b);
+  });
+  if (games.length && !games.some(g => g.src === frame.dataset.src)) {
+    frame.src = games[0].src; frame.dataset.src = games[0].src;
+    bar.children[0]?.classList.add('on');
+  }
 }
 // 動画スライド：本体をクリックで再生／一時停止（下端のコントロール部分は標準の操作に任せる）
 $('#slideVideo').addEventListener('click', e => {
@@ -643,9 +667,11 @@ $('#slideImg').addEventListener('load', layoutSlideLinks);
 addEventListener('resize', layoutSlideLinks);
 function clearSlides() {
   slides.urls.forEach(u => URL.revokeObjectURL(u));
-  slides.urls = []; slides.names = []; slides.kinds = []; slides.i = 0; slides.links = {};
+  slides.urls = []; slides.names = []; slides.kinds = []; slides.games = []; slides.i = 0; slides.links = {};
   $('#slideImg').removeAttribute('src'); $('#slideImg').style.display = 'none';
   const vid = $('#slideVideo'); vid.pause?.(); vid.removeAttribute('src'); vid.load?.(); vid.style.display = 'none';
+  const game = $('#slideGame'); game.style.display = 'none';
+  const frame = $('#gameFrame'); frame.removeAttribute('src'); frame.dataset.src = ''; $('#gameTabs').innerHTML = '';
   $('#slideCount').textContent = '';
   $('#slideLinks').innerHTML = '';
   updateStageBackground();
@@ -707,11 +733,12 @@ async function loadBundledSlides() {
     const res = await fetch('slides/manifest.json', { cache: 'no-cache' });
     if (!res.ok) return;
     const m = await res.json();
-    // slides の要素は、画像なら文字列（URL）、動画なら { src, type: 'video' }
-    const entries = Array.isArray(m?.slides) ? m.slides.filter(s => typeof s === 'string' || (s && typeof s.src === 'string')) : [];
+    // slides の要素は、画像なら文字列（URL）、動画なら { src, type: 'video' }、ゲーム集なら { type: 'games', games: [{label, src}] }
+    const entries = Array.isArray(m?.slides) ? m.slides.filter(s => typeof s === 'string' || (s && (typeof s.src === 'string' || s.type === 'games'))) : [];
     if (!entries.length || slides.urls.length) return;
-    slides.urls = entries.map(s => typeof s === 'string' ? s : s.src);
-    slides.kinds = entries.map(s => (typeof s === 'object' && s.type === 'video') ? 'video' : 'image');
+    slides.urls = entries.map(s => typeof s === 'string' ? s : (s.src || ''));
+    slides.kinds = entries.map(s => (typeof s === 'object' && s.type === 'video') ? 'video' : (typeof s === 'object' && s.type === 'games') ? 'games' : 'image');
+    slides.games = entries.map(s => (typeof s === 'object' && s.type === 'games' && Array.isArray(s.games)) ? s.games.filter(g => g && typeof g.src === 'string') : null);
     slides.names = entries.map((s, i) => (m.title || '同梱スライド') + ' ' + (i + 1));
     if (m.links && typeof m.links === 'object') slides.links = m.links; // ページ番号→リンク領域（任意）
     applySlides('デモ用スライドを ' + list.length + ' 枚読み込みました（→キーか、舞台をクリックで進みます）');
