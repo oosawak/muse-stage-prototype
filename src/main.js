@@ -768,7 +768,7 @@ function hitsActor(e) {
   raycaster.setFromCamera({ x: ((e.clientX - r.left) / r.width) * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1 }, camera);
   return raycaster.intersectObject(actor, true).length > 0;
 }
-function dodgeMove(x, z) { director.state = 'move'; director.moveT = 0; director.target = { x, z, clip: 'walk', speed: .8 }; }
+function dodgeMove(x, z) { if (!Number.isFinite(x) || !Number.isFinite(z)) return; director.state = 'move'; director.moveT = 0; director.target = { x, z, clip: 'walk', speed: .8 }; }
 function toggleDodge() {
   if (director.dodged) {
     director.dodged = false;
@@ -778,7 +778,8 @@ function toggleDodge() {
     setStatus('キャラクターが戻ります');
   } else {
     const z = clamp(actor.position.z, -.6, .4);
-    const edge = (actor.position.x >= 0 ? 1 : -1) * halfAt(z) * .92; // いまいる側の端へ
+    const h = halfAt(z); // halfAt は { halfW, halfH, centerY } を返す。数値と掛けると NaN になってキャラが消えるので、必ず halfW を使う
+    const edge = (actor.position.x >= 0 ? 1 : -1) * Math.max(.3, h.halfW - .5); // いまいる側の端へ。体の幅ぶん内側に止めて、全身が見える「避けた」位置にする
     director.dodged = true; director.seq = [];
     director.dodgeBack = { x: actor.position.x, z: actor.position.z };
     director.dodgeTarget = { x: edge, z };
