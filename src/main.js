@@ -640,12 +640,30 @@ $('#slideFiles').addEventListener('change', async e => {
     }
   } catch (err) { setStatus('スライドを読み込めませんでした：' + errText(err)); }
   if (!slides.urls.length) return;
+  applySlides('スライドを ' + slides.urls.length + ' 枚読み込みました（→キーか、舞台をクリックで進みます）');
+});
+function applySlides(note) {
   showSlide(0);
   // 初期位置は右側（資料の邪魔にならないように）
   actor.position.x = viewHalf().halfW * .55; actor.position.z = -.1;
   director.state = 'idle'; director.t = 2;
-  setStatus('スライドを ' + slides.urls.length + ' 枚読み込みました（→キーか、舞台をクリックで進みます）');
-});
+  setStatus(note);
+}
+/* ---------- Web版：同梱スライドの自動読み込み（開いてすぐデモを始められるように） ---------- */
+async function loadBundledSlides() {
+  if (inTauri) return; // アプリ版は自分の資料を選ぶ形のまま
+  try {
+    const res = await fetch('slides/manifest.json', { cache: 'no-cache' });
+    if (!res.ok) return;
+    const m = await res.json();
+    const list = Array.isArray(m?.slides) ? m.slides.filter(s => typeof s === 'string') : [];
+    if (!list.length || slides.urls.length) return;
+    slides.urls = list.slice();
+    slides.names = list.map((s, i) => (m.title || '同梱スライド') + ' ' + (i + 1));
+    applySlides('デモ用スライドを ' + list.length + ' 枚読み込みました（→キーか、舞台をクリックで進みます）');
+  } catch (e) { /* 同梱が無ければ何もしない */ }
+}
+loadBundledSlides();
 $('#btnSlidePrev').addEventListener('click', () => showSlide(slides.i - 1));
 $('#btnSlideNext').addEventListener('click', () => showSlide(slides.i + 1));
 $('#btnSlideClear').addEventListener('click', clearSlides);
