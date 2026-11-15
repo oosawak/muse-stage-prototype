@@ -592,19 +592,23 @@ const slides = { urls: [], names: [], kinds: [], games: [], i: 0, links: {} }; /
 function showSlide(i) {
   if (!slides.urls.length) return;
   slides.i = Math.min(slides.urls.length - 1, Math.max(0, i));
-  const img = $('#slideImg'), vid = $('#slideVideo'), game = $('#slideGame');
+  const img = $('#slideImg'), vid = $('#slideVideo'), game = $('#slideGame'), frame = $('#slideFrame');
   const kind = slides.kinds[slides.i];
   if (kind === 'video') {
-    img.style.display = 'none'; game.style.display = 'none';
+    img.style.display = 'none'; game.style.display = 'none'; frame.style.display = 'none';
     if (vid.getAttribute('src') !== slides.urls[slides.i]) vid.src = slides.urls[slides.i];
     vid.style.display = 'block';
     vid.play?.().catch(() => { /* 自動再生が止められたら、操作に任せる */ });
   } else if (kind === 'games') {
-    vid.pause?.(); vid.style.display = 'none'; img.style.display = 'none';
+    vid.pause?.(); vid.style.display = 'none'; img.style.display = 'none'; frame.style.display = 'none';
     game.style.display = 'flex';
     buildGameTabs(slides.games[slides.i] || []);
+  } else if (kind === 'iframe') {
+    vid.pause?.(); vid.style.display = 'none'; img.style.display = 'none'; game.style.display = 'none';
+    if (frame.getAttribute('src') !== slides.urls[slides.i]) frame.src = slides.urls[slides.i];
+    frame.style.display = 'block';
   } else {
-    vid.pause?.(); vid.style.display = 'none'; game.style.display = 'none';
+    vid.pause?.(); vid.style.display = 'none'; game.style.display = 'none'; frame.style.display = 'none';
     img.src = slides.urls[slides.i];
     img.style.display = 'block';
   }
@@ -671,7 +675,8 @@ function clearSlides() {
   $('#slideImg').removeAttribute('src'); $('#slideImg').style.display = 'none';
   const vid = $('#slideVideo'); vid.pause?.(); vid.removeAttribute('src'); vid.load?.(); vid.style.display = 'none';
   const game = $('#slideGame'); game.style.display = 'none';
-  const frame = $('#gameFrame'); frame.removeAttribute('src'); frame.dataset.src = ''; $('#gameTabs').innerHTML = '';
+  const gframe = $('#gameFrame'); gframe.removeAttribute('src'); gframe.dataset.src = ''; $('#gameTabs').innerHTML = '';
+  const sframe = $('#slideFrame'); sframe.removeAttribute('src'); sframe.style.display = 'none';
   $('#slideCount').textContent = '';
   $('#slideLinks').innerHTML = '';
   updateStageBackground();
@@ -737,7 +742,7 @@ async function loadBundledSlides() {
     const entries = Array.isArray(m?.slides) ? m.slides.filter(s => typeof s === 'string' || (s && (typeof s.src === 'string' || s.type === 'games'))) : [];
     if (!entries.length || slides.urls.length) return;
     slides.urls = entries.map(s => typeof s === 'string' ? s : (s.src || ''));
-    slides.kinds = entries.map(s => (typeof s === 'object' && s.type === 'video') ? 'video' : (typeof s === 'object' && s.type === 'games') ? 'games' : 'image');
+    slides.kinds = entries.map(s => (typeof s === 'object' && s.type === 'video') ? 'video' : (typeof s === 'object' && s.type === 'games') ? 'games' : (typeof s === 'object' && s.type === 'iframe') ? 'iframe' : 'image');
     slides.games = entries.map(s => (typeof s === 'object' && s.type === 'games' && Array.isArray(s.games)) ? s.games.filter(g => g && typeof g.src === 'string') : null);
     slides.names = entries.map((s, i) => (m.title || '同梱スライド') + ' ' + (i + 1));
     if (m.links && typeof m.links === 'object') slides.links = m.links; // ページ番号→リンク領域（任意）
