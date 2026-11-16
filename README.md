@@ -115,4 +115,4 @@ MUSE_SELFTEST=1 "src-tauri/target/release/bundle/macos/Muse Stage.app/Contents/M
 | mqtt（Web直送の中継） | MQTT.js contributors | MIT |
 | Tauri 2 | Tauri Programme | MIT / Apache-2.0 |
 
-VRM ファイルを画面にドラッグ＆ドロップすると、そのモデルに入れ替わります（保存はしません）。
+パネルの「VRMを選ぶ」からファイルを選ぶか、VRM ファイルを画面にドラッグ＆ドロップすると、そのモデルに入れ替わります（保存はしません）。

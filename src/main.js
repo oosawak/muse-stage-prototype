@@ -835,12 +835,14 @@ $('#btnRepliesFold').addEventListener('click', () => setRepliesFolded(!$('#repli
 if (prefs.get('repliesFold', '0') === '1') setRepliesFolded(true);
 // マウスを動かしたときだけ、操作パネルを濃く見せる
 let awakeT = 0; addEventListener('mousemove', () => { document.body.classList.add('awake'); clearTimeout(awakeT); awakeT = setTimeout(() => document.body.classList.remove('awake'), 2500); });
-// VRM ファイルを画面に落とすと入れ替わる
-addEventListener('dragover', e => e.preventDefault());
-addEventListener('drop', async e => {
-  e.preventDefault(); const f = [...e.dataTransfer.files].find(f => /\.vrm$/i.test(f.name)); if (!f) return;
+// VRM ファイルでキャラクターを入れ替える（「VRMを選ぶ」ボタンと、画面へのドラッグ＆ドロップの両方から）
+async function loadVRMFile(f) {
+  if (!f) return;
   const url = URL.createObjectURL(f); try { setStatus(`VRM「${await loadVRM(url)}」を読み込みました`); } catch (err) { setStatus('VRM を読めませんでした：' + err.message); } finally { URL.revokeObjectURL(url); }
-});
+}
+$('#vrmFile').addEventListener('change', e => { loadVRMFile(e.target.files[0]); e.target.value = ''; });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => { e.preventDefault(); loadVRMFile([...e.dataTransfer.files].find(f => /\.vrm$/i.test(f.name))); });
 
 /* ---------- 第2段：Muse.app の返事をアクセシビリティで取り込む（実験） ---------- */
 // Muse アプリの会話メッセージには、接頭辞つきで全文が入る姿と、段落ごとにバラバラな姿がある（2026-11-14 実機で確認）。
