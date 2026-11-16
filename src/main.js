@@ -847,9 +847,10 @@ const closeRelayGuide = () => { const g = $('#relayGuide'); g.hidden = true; g.s
 $('#btnRelayGuideClose').addEventListener('click', closeRelayGuide);
 $('#relayGuide').addEventListener('click', e => { if (e.target.id === 'relayGuide') closeRelayGuide(); });
 $('#btnRelayGuideCopy').addEventListener('click', async () => {
-  const t = $('#relayGuideText').innerText;
-  try { await navigator.clipboard.writeText(t); setStatus('指示書をコピーしました'); }
-  catch { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); setStatus('指示書をコピーしました'); }
+  const t = $('#relayGuideText').innerText, btn = $('#btnRelayGuideCopy');
+  try { await navigator.clipboard.writeText(t); }
+  catch { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  btn.textContent = 'コピーしました'; setTimeout(() => { btn.textContent = 'コピー'; }, 1600);
 });
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => { e.preventDefault(); loadVRMFile([...e.dataTransfer.files].find(f => /\.vrm$/i.test(f.name))); });
