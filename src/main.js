@@ -663,7 +663,9 @@ function layoutSlideLinks() {
   const iw = img.naturalWidth, ih = img.naturalHeight;
   if (!iw || !ih || slides.kinds[slides.i] === 'video') return; // リンク領域は画像スライドだけ
   const scale = Math.min(innerWidth / iw, innerHeight / ih);
-  const w = iw * scale, h = ih * scale, ox = (innerWidth - w) / 2, oy = (innerHeight - h) / 2;
+  const w = iw * scale, h = ih * scale, oy = (innerHeight - h) / 2;
+  const al = prefs.get('slideAlign', 'center');
+  const ox = al === 'left' ? 0 : al === 'right' ? innerWidth - w : (innerWidth - w) / 2;
   for (const a of $('#slideLinks').children) {
     const r = JSON.parse(a.dataset.rect);
     a.style.left = (ox + r.x * w) + 'px'; a.style.top = (oy + r.y * h) + 'px';
@@ -672,6 +674,15 @@ function layoutSlideLinks() {
 }
 $('#slideImg').addEventListener('load', layoutSlideLinks);
 addEventListener('resize', layoutSlideLinks);
+/* スライドの寄せ（中央・左・右）。PDF のページも画像スライドなので、同じ設定で効く */
+function applySlideAlign() {
+  const v = prefs.get('slideAlign', 'center');
+  $('#slideImg').style.objectPosition = v === 'left' ? 'left center' : v === 'right' ? 'right center' : 'center';
+  $('#slideAlign').value = v;
+  layoutSlideLinks();
+}
+$('#slideAlign').addEventListener('change', () => { prefs.set('slideAlign', $('#slideAlign').value); applySlideAlign(); });
+applySlideAlign();
 function clearSlides() {
   slides.urls.forEach(u => URL.revokeObjectURL(u));
   slides.urls = []; slides.names = []; slides.kinds = []; slides.games = []; slides.i = 0; slides.links = {};
