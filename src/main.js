@@ -925,10 +925,11 @@ function relayStart() {
   });
   mqttClient.on('error', () => { /* 再接続はライブラリが続ける */ });
 }
-$('#chkRelay').addEventListener('change', () => { prefs.set('relay', $('#chkRelay').checked ? 1 : 0); if ($('#chkRelay').checked) relayStart(); else { relayStop(); setStatus('中継を切りました'); } });
+$('#chkRelay').addEventListener('change', () => { prefs.set('relay', $('#chkRelay').checked ? 1 : 0); $('#relayCredit').hidden = !$('#chkRelay').checked; if ($('#chkRelay').checked) relayStart(); else { relayStop(); setStatus('中継を切りました'); } });
 $('#relayTopic').addEventListener('change', () => { prefs.set('relayTopic', $('#relayTopic').value.trim()); if ($('#chkRelay').checked) relayStart(); });
 $('#relayTopic').value = prefs.get('relayTopic', '');
 $('#chkRelay').checked = prefs.get('relay', '0') === '1';
+$('#relayCredit').hidden = !$('#chkRelay').checked;
 if ($('#chkRelay').checked) relayStart();
 
 /* ---------- ミューズ直送：配達ファイルの見張り ---------- */

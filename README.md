@@ -112,7 +112,7 @@ MUSE_SELFTEST=1 "src-tauri/target/release/bundle/macos/Muse Stage.app/Contents/M
 | three.js ^0.169.0 | three.js authors | MIT |
 | @pixiv/three-vrm ^3.0.0／@pixiv/three-vrm-animation ^3.5.5 | pixiv Inc. | MIT |
 | pdfjs-dist（PDF スライドの画像化） | Mozilla | Apache-2.0 |
-| mqtt（Web直送の中継） | MQTT.js contributors | MIT |
+| mqtt（Web直送の中継。ブローカーは EMQX の公開ブローカー〈テスト用〉で、表示義務はないが舞台のクレジットに任意で表示） | MQTT.js contributors | MIT |
 | Tauri 2 | Tauri Programme | MIT / Apache-2.0 |
 
 パネルの「VRMを選ぶ」からファイルを選ぶか、VRM ファイルを画面にドラッグ＆ドロップすると、そのモデルに入れ替わります（保存はしません）。
