@@ -841,6 +841,15 @@ async function loadVRMFile(f) {
   const url = URL.createObjectURL(f); try { setStatus(`VRM「${await loadVRM(url)}」を読み込みました`); } catch (err) { setStatus('VRM を読めませんでした：' + err.message); } finally { URL.revokeObjectURL(url); }
 }
 $('#vrmFile').addEventListener('change', e => { loadVRMFile(e.target.files[0]); e.target.value = ''; });
+// 「AIへの指示書（中継のはじめ方）」の表示・コピー・閉じる
+$('#btnRelayGuide').addEventListener('click', () => { $('#relayGuide').hidden = false; });
+$('#btnRelayGuideClose').addEventListener('click', () => { $('#relayGuide').hidden = true; });
+$('#relayGuide').addEventListener('click', e => { if (e.target.id === 'relayGuide') $('#relayGuide').hidden = true; });
+$('#btnRelayGuideCopy').addEventListener('click', async () => {
+  const t = $('#relayGuideText').innerText;
+  try { await navigator.clipboard.writeText(t); setStatus('指示書をコピーしました'); }
+  catch { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); setStatus('指示書をコピーしました'); }
+});
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => { e.preventDefault(); loadVRMFile([...e.dataTransfer.files].find(f => /\.vrm$/i.test(f.name))); });
 
