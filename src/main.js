@@ -842,9 +842,10 @@ async function loadVRMFile(f) {
 }
 $('#vrmFile').addEventListener('change', e => { loadVRMFile(e.target.files[0]); e.target.value = ''; });
 // 「AIへの指示書（中継のはじめ方）」の表示・コピー・閉じる
-$('#btnRelayGuide').addEventListener('click', () => { $('#relayGuide').hidden = false; });
-$('#btnRelayGuideClose').addEventListener('click', () => { $('#relayGuide').hidden = true; });
-$('#relayGuide').addEventListener('click', e => { if (e.target.id === 'relayGuide') $('#relayGuide').hidden = true; });
+$('#btnRelayGuide').addEventListener('click', () => { const g = $('#relayGuide'); g.hidden = false; g.style.display = 'flex'; });
+const closeRelayGuide = () => { const g = $('#relayGuide'); g.hidden = true; g.style.display = 'none'; };
+$('#btnRelayGuideClose').addEventListener('click', closeRelayGuide);
+$('#relayGuide').addEventListener('click', e => { if (e.target.id === 'relayGuide') closeRelayGuide(); });
 $('#btnRelayGuideCopy').addEventListener('click', async () => {
   const t = $('#relayGuideText').innerText;
   try { await navigator.clipboard.writeText(t); setStatus('指示書をコピーしました'); }
