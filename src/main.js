@@ -50,7 +50,8 @@ function frameCamera() {
   // 全身がほぼ入る距離感（近すぎるという本人の指摘で、上半身寄りから引いた構図へ。2026-11-15）
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  const dist = (w / h < 1 ? 3.2 : 2.5) * modelH * (typeof slides !== 'undefined' && slides.urls.length ? 1.55 : 1); // 背の高いモデルほど引く。スライド表示中はさらに引いて小さく（資料の邪魔をしない）
+  const sizeF = parseFloat((typeof prefs !== 'undefined' && prefs.get('vrmSize', '1')) || '1') || 1; // 「大きさ」スライダー：大きいほどカメラを寄せる
+  const dist = (w / h < 1 ? 3.2 : 2.5) * modelH * (typeof slides !== 'undefined' && slides.urls.length ? 1.55 : 1) / sizeF; // 背の高いモデルほど引く。スライド表示中はさらに引いて小さく（資料の邪魔をしない）
   camera.position.set(0, headY - modelH * .24, dist); camera.lookAt(0, headY - modelH * .32, 0);
   camera.updateProjectionMatrix();
 }
@@ -821,6 +822,8 @@ $('#chkAutoGrab').addEventListener('change', () => prefs.set('autoGrab', $('#chk
 $('#chkSplit').addEventListener('change', () => prefs.set('split', $('#chkSplit').checked ? 1 : 0));
 $('#chkSplit').checked = prefs.get('split', '0') === '1'; // 統合版の既定はオフ（オンにすると設定が残る）
 $('#rate').value = prefs.get('rate', '0.9'); $('#rateVal').textContent = rateMul().toFixed(2);
+$('#vrmSize').addEventListener('input', () => { $('#vrmSizeVal').textContent = Number($('#vrmSize').value).toFixed(2); prefs.set('vrmSize', $('#vrmSize').value); frameCamera(); });
+$('#vrmSize').value = prefs.get('vrmSize', '1'); $('#vrmSizeVal').textContent = Number($('#vrmSize').value).toFixed(2);
 $('#engine').value = prefs.get('engine', inTauri ? 'voicevox' : 'web'); // アプリ版の既定は VOICEVOX、Web版はブラウザの読み上げ（https からはローカルの VOICEVOX に繋がらない）
 $('#chkCaption').checked = prefs.get('caption', '1') === '1';
 $('#chkAuto').checked = prefs.get('auto', '1') === '1'; // 直送モードの基本は「新しい投稿は喋る」。外したらクリックで喋る
