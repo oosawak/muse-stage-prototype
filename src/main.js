@@ -827,6 +827,8 @@ $('#vrmSize').value = prefs.get('vrmSize', '1'); $('#vrmSizeVal').textContent = 
 $('#engine').value = prefs.get('engine', inTauri ? 'voicevox' : 'web'); // アプリ版の既定は VOICEVOX、Web版はブラウザの読み上げ（https からはローカルの VOICEVOX に繋がらない）
 $('#chkCaption').checked = prefs.get('caption', '1') === '1';
 $('#chkAuto').checked = prefs.get('auto', '1') === '1'; // 直送モードの基本は「新しい投稿は喋る」。外したらクリックで喋る
+$('#chkGreet').addEventListener('change', () => prefs.set('greet', $('#chkGreet').checked ? 1 : 0));
+$('#chkGreet').checked = prefs.get('greet', '1') === '1'; // 起動時の挨拶は既定オン（舞台から先に動き出す）
 $('#motionMode').value = director.mode;
 $('#motionMode').addEventListener('change', () => { director.mode = $('#motionMode').value; prefs.set('motion', director.mode); });
 $('#chkAutoGrab').checked = prefs.get('autoGrab', '0') === '1';
@@ -1023,6 +1025,13 @@ setInterval(async () => {
   const ss = !!window.speechSynthesis;
   report(`speechSynthesis: ${ss ? 'あり' : 'なし'}・日本語の声 ${webVoices().length} 件（全体 ${window.speechSynthesis?.getVoices().length ?? 0} 件）・say の日本語の声 ${voices.join(',')}`);
   setStatus(`準備できました（${inTauri ? 'アプリ' : 'ブラウザ'}）。スペースキーか「読み上げ」で話します`);
+  // 起動時の挨拶：舞台の側から先に一言話して、動き出す（本人の提案。自己確認のときは除く）
+  if ($('#chkGreet').checked && !(inTauri && await invoke('selftest').catch(() => false))) {
+    const greet = prefs.get('greetText', 'みなさん、こんにちは。まもなく発表をはじめます。');
+    $('#text').value = greet;
+    await new Promise(r => setTimeout(r, 700));
+    speak(greet);
+  }
   // 自己確認：MUSE_SELFTEST=1 で起動したら、既定の文を自動で読み上げて結果を記録する
   if (inTauri && await invoke('selftest').catch(() => false)) {
     report('自己確認：自動モードで読み上げます');
