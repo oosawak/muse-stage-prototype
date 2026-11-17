@@ -537,6 +537,8 @@ async function speak(text) {
       setStatus((used === 'voicevox' ? '読み上げ：VOICEVOX（ずんだもん／玄野武宏）' : used === 'web' ? '読み上げ：WebView の speechSynthesis' : `読み上げ：macOS の say（${$('#voice').value || 'Kyoko'}）`) + splitNote);
     } else if (used === 'stopped') setStatus('止めました');
     report(`読み上げ完了: ${used}`);
+    // 読み上げ中に届いていた返事があれば、少し間を置いて続けて読む（止められたときは読まない）
+    if (used && used !== 'stopped' && pendingSpeak && $('#chkAuto').checked) { const t = pendingSpeak; pendingSpeak = null; setTimeout(() => speak(t), 350); }
     return used;
   } catch (e) { setStatus('読み上げられませんでした：' + errText(e)); report('読み上げ失敗: ' + errText(e)); }
   finally { $('#btnSpeak').disabled = false; speaking = false; setTimeout(hideCaption, 1200); }
@@ -905,6 +907,7 @@ function renderReplies(replies) {
 }
 /* ---------- 外から届いた返事（ウェブフック／ミューズ直送）の共通の受け方 ---------- */
 let stageReplies = [];
+let pendingSpeak = null; // 読み上げ中に届いた返事の控え。今の文が終わったら続けて読む（届いた順ではなく最新の1件）
 function acceptReply(text, source) {
   text = (text || '').trim();
   if (!text) return;
@@ -913,7 +916,10 @@ function acceptReply(text, source) {
   setStatus(source + 'で返事が届きました');
   report(source + 'で返事を受信しました');
   director.yesPlease = true; // 返事が来たら、まず小さくうなずく
-  if ($('#chkAuto').checked && !speaking) speak(text); // 「自動で読む」が入っていれば、そのまま読み上げる
+  if ($('#chkAuto').checked) { // 「自動で読む」が入っていれば、そのまま読み上げる
+    if (!speaking) speak(text);
+    else { pendingSpeak = text; setStatus(source + 'で返事が届きました（読み上げ中なので、終わったら読みます）'); }
+  }
 }
 if (hookListen) hookListen('hooked-reply', e => acceptReply(e.payload?.text, 'ウェブフック'));
 
